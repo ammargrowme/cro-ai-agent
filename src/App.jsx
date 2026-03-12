@@ -446,6 +446,8 @@ export default function App() {
           width: 100%; height: 100%;
           backface-visibility: hidden; 
         }
+        .flip-card.flipped .flip-card-front { pointer-events: none; }
+        .flip-card.flipped .flip-card-back { pointer-events: auto; }
         .flip-card-back { 
           transform: rotateY(180deg); 
           display: flex;
