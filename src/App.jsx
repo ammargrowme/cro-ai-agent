@@ -1021,7 +1021,7 @@ export default function App() {
                         </div>
 
                         {/* BACK OF CARD */}
-                        <div className="flip-card-back bg-[#101217] border-2 border-[#F25430] rounded-3xl p-8 shadow-[0_0_40px_rgba(242,84,48,0.3)] custom-scrollbar">
+                        <div onClick={(e) => e.stopPropagation()} className="flip-card-back bg-[#101217] border-2 border-[#F25430] rounded-3xl p-8 shadow-[0_0_40px_rgba(242,84,48,0.3)] custom-scrollbar">
                           <div className="text-[#F25430] font-black text-lg mb-4 font-['Montserrat'] uppercase tracking-widest flex items-center gap-2 flex-shrink-0"><Sparkles size={20} /> Solution</div>
                           <p className="text-white text-[15px] font-medium leading-relaxed mb-6 flex-shrink-0">{rec.recommendation}</p>
 
@@ -1129,8 +1129,13 @@ export default function App() {
                         <div className="md:w-1/4 space-y-6 pt-6 md:pt-0 border-t border-[#242830] md:border-none flex flex-col justify-between">
                           <div>
                             <div style={{ color: BRAND.textMuted, fontSize: "13px", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px", fontWeight: "800" }}>Expected Impact</div>
-                            <div className="flex items-center gap-2" style={{ color: BRAND.accentSuccess, fontSize: "16px", fontWeight: "800", fontFamily: "'Montserrat', sans-serif" }}>
+                            <div className="flex items-center gap-2 mb-3" style={{ color: BRAND.accentSuccess, fontSize: "16px", fontWeight: "800", fontFamily: "'Montserrat', sans-serif" }}>
                               <TrendingUp size={20} strokeWidth={3} /> {rec.expected_impact}
+                            </div>
+                            <div className="flex gap-1.5">
+                              <div className={`h-2.5 w-6 rounded-sm ${rec.priority?.toLowerCase() === 'low' || rec.priority?.toLowerCase() === 'medium' || rec.priority?.toLowerCase() === 'high' ? 'bg-[#4ADE80] shadow-[0_0_10px_rgba(74,222,128,0.4)]' : 'bg-[#242830]'}`}></div>
+                              <div className={`h-2.5 w-6 rounded-sm ${rec.priority?.toLowerCase() === 'medium' || rec.priority?.toLowerCase() === 'high' ? 'bg-[#FBBF24] shadow-[0_0_10px_rgba(251,191,36,0.4)]' : 'bg-[#242830]'}`}></div>
+                              <div className={`h-2.5 w-6 rounded-sm ${rec.priority?.toLowerCase() === 'high' ? 'bg-[#F25430] shadow-[0_0_10px_rgba(242,84,48,0.4)]' : 'bg-[#242830]'}`}></div>
                             </div>
                           </div>
                           <div>
