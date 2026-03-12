@@ -1156,7 +1156,7 @@ export default function App() {
                                 className="flex-1 py-3 rounded-xl font-bold bg-[#F25430] hover:bg-[#D94A2A] text-white transition-all flex items-center justify-center gap-2 text-[13px] disabled:opacity-50 active:scale-95 shadow-lg"
                               >
                                 {codePatches[rec.id]?.loading ? <Loader2 size={16} className="animate-spin" /> : <Code size={16} strokeWidth={3} />}
-                                {codePatches[rec.id]?.loading ? 'Building...' : 'Code ✨'}
+                                {codePatches[rec.id]?.loading ? 'Building...' : <span className="whitespace-nowrap">Code ✨</span>}
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleGenerateABTests(rec); }}
@@ -1164,7 +1164,7 @@ export default function App() {
                                 className="flex-1 py-3 rounded-xl font-bold bg-[#242830] hover:bg-[#4B5563] text-white transition-all flex items-center justify-center gap-2 text-[13px] disabled:opacity-50 active:scale-95 shadow-lg border border-[#4B5563]"
                               >
                                 {abTests[rec.id]?.loading ? <Loader2 size={16} className="animate-spin" /> : <Type size={16} strokeWidth={3} />}
-                                {abTests[rec.id]?.loading ? 'Drafting...' : 'A/B Copy ✨'}
+                                {abTests[rec.id]?.loading ? 'Drafting...' : <span className="whitespace-nowrap">A/B Copy ✨</span>}
                               </button>
                             </div>
 
@@ -1271,7 +1271,7 @@ export default function App() {
                               className="w-full px-4 py-3 rounded-xl font-bold hover:bg-[#F25430] hover:text-white transition-all flex items-center justify-center gap-2 text-[14px] disabled:opacity-50 active:scale-95 shadow-md"
                             >
                               {codePatches[rec.id]?.loading ? <Loader2 size={18} className="animate-spin" /> : <Code size={18} strokeWidth={3} />}
-                              {codePatches[rec.id]?.loading ? 'Building...' : 'Code ✨'}
+                              {codePatches[rec.id]?.loading ? 'Building...' : <span className="whitespace-nowrap">Code ✨</span>}
                             </button>
                             <button
                               onClick={() => handleGenerateABTests(rec)}
@@ -1279,7 +1279,7 @@ export default function App() {
                               className="w-full px-4 py-3 rounded-xl font-bold bg-[#242830] hover:bg-[#4B5563] text-white border border-[#4B5563] transition-all flex items-center justify-center gap-2 text-[14px] disabled:opacity-50 active:scale-95 shadow-md"
                             >
                               {abTests[rec.id]?.loading ? <Loader2 size={18} className="animate-spin" /> : <Type size={18} strokeWidth={3} />}
-                              {abTests[rec.id]?.loading ? 'Drafting...' : 'A/B Copy ✨'}
+                              {abTests[rec.id]?.loading ? 'Drafting...' : <span className="whitespace-nowrap">A/B Copy ✨</span>}
                             </button>
                           </div>
 
