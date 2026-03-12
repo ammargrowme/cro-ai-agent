@@ -291,7 +291,7 @@ export default function App() {
         throw new Error("Empty report received.");
       }
     } catch (err) {
-      setAppError(`Analysis Failed: ${err.message}. Please check Vercel Logs for technical details.`);
+      setAppError(`Analysis Error: ${err.message}. Please check Vercel Logs for the corresponding [Log ID].`);
       setStatus("idle");
     }
   };

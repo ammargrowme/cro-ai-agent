@@ -61,34 +61,58 @@ const fetchWithRetry = async (url, options, retries = 3) => {
   }
 };
 
+const repairJson = (text) => {
+  let cleaned = text.trim();
+  if (cleaned.startsWith('{') && !cleaned.endsWith('}')) {
+    console.warn("[REPAIR] Detected truncated JSON. Attempting structural repair...");
+    const quoteCount = (cleaned.match(/"/g) || []).length;
+    if (quoteCount % 2 !== 0) cleaned += '"';
+    const stack = [];
+    for (let i = 0; i < cleaned.length; i++) {
+        if (cleaned[i] === '{') stack.push('}');
+        else if (cleaned[i] === '[') stack.push(']');
+        else if (cleaned[i] === '}' || cleaned[i] === ']') stack.pop();
+    }
+    while (stack.length > 0) cleaned += stack.pop();
+    return cleaned;
+  }
+  return cleaned;
+};
+
 const safeParseJSON = (text) => {
   if (!text) return null;
-  try {
-    // Try clean parse
-    return JSON.parse(text);
+  let attempt = text.trim();
+  try { return JSON.parse(attempt); } catch (e) {}
+  attempt = attempt.replace(/```json/g, '').replace(/```/g, '').trim();
+  try { return JSON.parse(attempt); } catch (e) {}
+  const repaired = repairJson(attempt);
+  try { 
+    const parsed = JSON.parse(repaired); 
+    console.log("[REPAIR] Success! Repaired truncated JSON object.");
+    return parsed;
   } catch (e) {
-    // Try stripping markdown blocks
-    const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    try {
-      return JSON.parse(cleaned);
-    } catch (e2) {
-      console.error("JSON Parse Critical Failure:", text.substring(0, 500));
-      return null;
-    }
+    console.error("JSON Parse Critical Failure:", attempt.substring(0, 500));
+    return null;
   }
 };
 
 const sanitizeHtml = (rawHtml) => {
   if (!rawHtml) return "";
-  return rawHtml
-    .replace(/<!--[\s\S]*?-->/g, '') // Remove comments
+  const cleaned = rawHtml
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
     .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '[ICON]')
-    .replace(/<link\b[^>]*\/?>/gi, '') // Remove links
-    .replace(/\s+/g, ' ') // Collapse whitespace
-    .trim()
-    .substring(0, 40000); // 40k chars is plenty for structure
+    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<link\b[^>]*\/?>/gi, '')
+    .replace(/class="[^"]*"/gi, '') // Remove classes to save massive tokens
+    .replace(/style="[^"]*"/gi, '') // Remove inline styles
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  const final = cleaned.substring(0, 35000);
+  console.log(`[SCRAPE] Sanitized HTML size: ${(final.length / 1024).toFixed(2)} KB`);
+  return final;
 };
 
 export default async function handler(req, res) {
@@ -97,118 +121,97 @@ export default async function handler(req, res) {
   const { url, context, competitors, customPageSpeedKey } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
-  console.log(`[ANALYSIS] Starting for: ${url}`);
+  const logId = Math.random().toString(36).substring(7);
+  console.log(`[${logId}] [START] Audit requested: ${url}`);
 
   try {
     // 1. Scrape Main HTML
-    console.log(`[SCRAPE] Fetching HTML...`);
+    console.log(`[${logId}] [STEP 1] Fetching live HTML...`);
     let mainHtml = "";
     try {
-      const pageRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' } });
+      const pageRes = await fetch(url, { 
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(10000)
+      });
       mainHtml = sanitizeHtml(await pageRes.text());
-      console.log(`[SCRAPE] Success. Size: ${(mainHtml.length / 1024).toFixed(2)} KB`);
     } catch (err) {
-      console.error(`[SCRAPE] Failed: ${err.message}`);
-      mainHtml = `Failed to scrape ${url} directly.`;
+      console.error(`[${logId}] [STEP 1 ERROR] Scrape failed: ${err.message}`);
+      mainHtml = `Failed to scrape ${url}. Proceeding with URL context only.`;
     }
 
     // 2. Scrape Competitors
     let competitorsHtmlStr = "";
     if (competitors && competitors.length > 0) {
-      console.log(`[COMPETITORS] Scraping ${competitors.length} competitors...`);
-      const compPromises = competitors.map(async (cUrl) => {
+      console.log(`[${logId}] [STEP 2] Processing ${competitors.length} competitors...`);
+      for (const cUrl of competitors) {
         try {
-          const cRes = await fetch(cUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          console.log(`[${logId}] [STEP 2] Scraping: ${cUrl}`);
+          const cRes = await fetch(cUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(6000) });
           const cHtml = sanitizeHtml(await cRes.text());
-          return `--- URL: ${cUrl} ---\n${cHtml}\n`;
+          competitorsHtmlStr += `--- COMPETITOR: ${cUrl} ---\n${cHtml.substring(0, 5000)}\n`;
         } catch (e) {
-          return `--- URL: ${cUrl} ---\nFailed to scrape.\n`;
+          console.warn(`[${logId}] [STEP 2 WARN] Failed ${cUrl}: ${e.message}`);
         }
-      });
-      competitorsHtmlStr = (await Promise.all(compPromises)).join('\n');
+      }
     }
 
     // 3. PageSpeed & Screenshot
-    console.log(`[PAGESPEED] Fetching metrics via Google API...`);
+    console.log(`[${logId}] [STEP 3] Running PageSpeed Insights...`);
     const psKey = customPageSpeedKey || apiKey;
     const psUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance${psKey ? `&key=${psKey}` : ''}`;
     
     let pageSpeedData = { scoreText: "Unavailable", screenshot: null, mimeType: "image/jpeg" };
     try {
-      const psRes = await fetch(psUrl);
+      const psRes = await fetch(psUrl, { signal: AbortSignal.timeout(28000) });
       if (psRes.ok) {
         const psData = await psRes.json();
         const score = psData.lighthouseResult?.categories?.performance?.score * 100;
-        pageSpeedData.scoreText = score ? `Score: ${score}/100` : "Unavailable";
+        pageSpeedData.scoreText = score ? `Performance Score: ${score}/100` : "Unavailable";
         const screenshotData = psData.lighthouseResult?.audits?.['final-screenshot']?.details?.data;
         if (screenshotData) {
             const match = screenshotData.match(/^data:([^;]+);base64,/);
             if (match) pageSpeedData.mimeType = match[1];
             pageSpeedData.screenshot = screenshotData.replace(/^data:image\/\w+;base64,/, "");
         }
-        console.log(`[PAGESPEED] Success. Score: ${score || 'N/A'}`);
+        console.log(`[${logId}] [STEP 3] Success. Score: ${score}`);
       } else {
-        const errTxt = await psRes.text();
-        console.warn(`[PAGESPEED] API returned status ${psRes.status}:`, errTxt);
+        console.warn(`[${logId}] [STEP 3 WARN] PageSpeed returned ${psRes.status}`);
       }
     } catch (err) {
-      console.error(`[PAGESPEED] Failed: ${err.message}`);
+      console.error(`[${logId}] [STEP 3 ERROR] PageSpeed failed: ${err.message}`);
     }
 
     // 4. Gemini Synthesis
-    console.log(`[GEMINI] Preparing multi-modal payload...`);
+    console.log(`[${logId}] [STEP 4] Preparing AI analysis...`);
     const model = "gemini-2.5-flash";
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     
-    let promptText = `Act as an Elite Conversion Rate Optimization (CRO) Lead at a world-class digital agency. 
-Your mission is to perform a deep-dive audit of the following website: ${url}.
-
-[DATA SOURCES]
-1. LIVE HTML STRUCTURE:
+    const promptText = `Act as an Elite CRO Director. Analyze ${url}.
+[SOURCE]: 
 ${mainHtml}
+[PAGESPEED]: ${pageSpeedData.scoreText}
 
-2. PERFORMANCE METRICS (PageSpeed Insights):
-${pageSpeedData.scoreText}
-
-[AUDIT GUIDELINES]
-- Analyze the Visual Hierarchy: How is the "Above the Fold" content structured?
-- Evaluate the Value Proposition: Is it clear what the site offers within 3 seconds?
-- Trust & Authority: Are there testimonials, logos, or security badges?
-- Friction Points: Where might a user get confused or leave?
-- Comparison: If competitor data is provided, identify 2-3 specific "Gaps" where they are outperforming this site.
-
-[DETAILED OUTPUT INSTRUCTIONS]
-- OVERALL_SCORE: Be critical. 90+ is rare. 
-- SUMMARY: Provide a 3-4 sentence high-level executive summary of current performance.
-- STRENGTHS: List 3-5 specific technical or design elements that ARE working.
-- QUICK_WINS: List absolute "no-brainer" fixes that take < 1 hour to implement.
-- RECOMMENDATIONS: Provide 5-8 depth-focused recommendations. For each, specify:
-    - category: (UX, Design, Performance, or Copy)
-    - issue: What exactly is broken?
-    - recommendation: How exactly to fix it?
-    - implementation: Give a brief technical hint (e.g., "Change the z-index" or "Add a sticky header").
+[TASK]:
+1. Executive Summary.
+2. Strengths.
+3. 5-8 Recommendations (id, category, issue, recommendation, expected_impact, implementation).
+4. Competitor Gap Analysis.
 
 [COMPETITORS]:
-${competitorsHtmlStr || "No competitor data provided."}
+${competitorsHtmlStr || "N/A"}
 
-[USER CONTEXT]:
-${context || "No specific business goals provided."}
+[USER GOALS]:
+${context || "N/A"}
 
-FINAL RULE: Return ONLY a valid JSON object matching the requested schema. No conversational filler.`;
+OUTPUT: Valid JSON ONLY. No preamble.`;
 
     const parts = [{ text: promptText }];
     if (pageSpeedData.screenshot) {
-      console.log(`[GEMINI] Attaching screenshot (${(pageSpeedData.screenshot.length / 1024).toFixed(2)} KB)...`);
-      parts.push({
-        inlineData: {
-          mimeType: pageSpeedData.mimeType,
-          data: pageSpeedData.screenshot
-        }
-      });
+      console.log(`[${logId}] [STEP 4] Attaching image (${(pageSpeedData.screenshot.length / 1024).toFixed(2)} KB)`);
+      parts.push({ inlineData: { mimeType: pageSpeedData.mimeType, data: pageSpeedData.screenshot } });
     }
 
-    console.log(`[GEMINI] Payload ready. Prompt: ${promptText.length} chars. Image: ${pageSpeedData.screenshot ? 'Yes' : 'No'}`);
-    console.log(`[GEMINI] Sending request to Google (Model: ${model})...`);
+    console.log(`[${logId}] [STEP 4] Prompt: ${promptText.length} chars. Image: ${pageSpeedData.screenshot ? 'Yes' : 'No'}`);
     
     const startTime = Date.now();
     const geminiResult = await fetchWithRetry(geminiUrl, {
@@ -226,31 +229,23 @@ FINAL RULE: Return ONLY a valid JSON object matching the requested schema. No co
     });
 
     const duration = Date.now() - startTime;
-    console.log(`[GEMINI] Response received in ${duration}ms`);
+    console.log(`[${logId}] [COMPLETE] Response in ${duration}ms. JSON length: ${geminiResult.candidates?.[0]?.content?.parts?.[0]?.text?.length || 0}`);
 
     const reportText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!reportText) {
-      console.error("[GEMINI] Fatal: No text in candidates array.");
-      throw new Error("Empty response from AI engine.");
-    }
+    if (!reportText) throw new Error("Empty response from AI engine.");
 
-    console.log(`[GEMINI] Raw text length: ${reportText.length} chars.`);
-    
     let report = safeParseJSON(reportText);
     if (!report) {
       const isTruncated = reportText.length > 0 && !reportText.trim().endsWith("}");
-      console.error(`[GEMINI] JSON Parse Failure. ${isTruncated ? 'RESPONSE DETECTED AS TRUNCATED.' : ''}`);
-      console.error(`[GEMINI] Raw Head: ${reportText.substring(0, 100)}...`);
-      console.error(`[GEMINI] Raw Tail: ...${reportText.slice(-100)}`);
-      throw new Error(`AI generated invalid or truncated data (${reportText.length} chars).`);
+      console.error(`[${logId}] [FATAL] Parse Failed. Truncated: ${isTruncated}. Raw Tail: ${reportText.slice(-100)}`);
+      throw new Error(`Invalid data from AI (${reportText.length} chars). Try again.`);
     }
 
-    console.log(`[SUCCESS] Analysis complete for ${url}. Recommendations: ${report.recommendations?.length || 0}`);
-    
+    console.log(`[${logId}] [SUCCESS] Report score: ${report.overall_score}. Recs: ${report.recommendations?.length}`);
     return res.status(200).json(report);
 
   } catch (err) {
-    console.error(`[FATAL ERROR]`, err);
+    console.error(`[${logId}] [FATAL]`, err);
     return res.status(500).json({ error: err.message });
   }
 }
