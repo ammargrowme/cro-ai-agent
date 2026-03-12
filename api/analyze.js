@@ -61,7 +61,6 @@ const callGemini = async (logId, promptText, imageParts, schema) => {
   try {
     return JSON.parse(text);
   } catch (e) {
-    // Try stripping markdown
     const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
     try { return JSON.parse(cleaned); } catch (e2) {}
     console.error(`[${logId}] JSON parse failed. Preview: ${text.substring(0, 300)}`);
@@ -69,7 +68,7 @@ const callGemini = async (logId, promptText, imageParts, schema) => {
   }
 };
 
-// ─── SCHEMAS (split into two small, focused schemas) ──────
+// ─── SCHEMAS ──────────────────────────────────────────────
 
 const OVERVIEW_SCHEMA = {
   type: "object",
@@ -123,64 +122,79 @@ export default async function handler(req, res) {
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
   const logId = Math.random().toString(36).substring(7);
+  const globalStart = Date.now();
   console.log(`[${logId}] ════════════════════════════════════════`);
   console.log(`[${logId}] [START] Audit for ${url}`);
 
   try {
-    // ──── STEP 1: Scrape HTML ────
-    let mainHtml = "";
-    try {
-      const t = Date.now();
-      const pageRes = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        signal: AbortSignal.timeout(10000)
-      });
-      mainHtml = sanitizeHtml(await pageRes.text());
-      console.log(`[${logId}] [STEP 1] HTML scraped: ${mainHtml.length} chars in ${Date.now() - t}ms`);
-    } catch (err) {
-      console.error(`[${logId}] [STEP 1 FAIL] ${err.message}`);
-    }
+    // ══════════════════════════════════════════════════
+    // PHASE 1: Scrape + PageSpeed IN PARALLEL
+    //   (These two don't depend on each other)
+    // ══════════════════════════════════════════════════
+    const scrapePromise = (async () => {
+      try {
+        const t = Date.now();
+        const pageRes = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          signal: AbortSignal.timeout(8000)
+        });
+        const html = sanitizeHtml(await pageRes.text());
+        console.log(`[${logId}] [PHASE 1] Scrape OK: ${html.length} chars in ${Date.now() - t}ms`);
+        return html;
+      } catch (err) {
+        console.error(`[${logId}] [PHASE 1] Scrape FAIL: ${err.message}`);
+        return "";
+      }
+    })();
 
-    // ──── STEP 2: PageSpeed ────
     const psKey = customPageSpeedKey || apiKey;
     const psUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance${psKey ? `&key=${psKey}` : ''}`;
-    let pageSpeedData = { scoreText: "Unavailable", screenshot: null, mimeType: "image/jpeg" };
 
-    try {
-      console.log(`[${logId}] [STEP 2] Calling PageSpeed...`);
-      const t = Date.now();
-      const psRes = await fetch(psUrl, { signal: AbortSignal.timeout(45000) });
-      if (psRes.ok) {
-        const psData = await psRes.json();
-        const score = Math.round(psData.lighthouseResult?.categories?.performance?.score * 100);
-        pageSpeedData.scoreText = score ? `Performance Score: ${score}/100` : "Unavailable";
-        const ssData = psData.lighthouseResult?.audits?.['final-screenshot']?.details?.data;
-        if (ssData) {
-          const match = ssData.match(/^data:([^;]+);base64,/);
-          if (match) pageSpeedData.mimeType = match[1];
-          pageSpeedData.screenshot = ssData.replace(/^data:image\/\w+;base64,/, "");
+    const pageSpeedPromise = (async () => {
+      let data = { scoreText: "Unavailable", screenshot: null, mimeType: "image/jpeg" };
+      try {
+        const t = Date.now();
+        console.log(`[${logId}] [PHASE 1] PageSpeed starting...`);
+        const psRes = await fetch(psUrl, { signal: AbortSignal.timeout(25000) });
+        if (psRes.ok) {
+          const psData = await psRes.json();
+          const score = Math.round(psData.lighthouseResult?.categories?.performance?.score * 100);
+          data.scoreText = score ? `Performance Score: ${score}/100` : "Unavailable";
+          const ssData = psData.lighthouseResult?.audits?.['final-screenshot']?.details?.data;
+          if (ssData) {
+            const match = ssData.match(/^data:([^;]+);base64,/);
+            if (match) data.mimeType = match[1];
+            data.screenshot = ssData.replace(/^data:image\/\w+;base64,/, "");
+          }
+          console.log(`[${logId}] [PHASE 1] PageSpeed OK: ${score}/100 in ${Date.now() - t}ms`);
+        } else {
+          const errText = await psRes.text();
+          console.warn(`[${logId}] [PHASE 1] PageSpeed HTTP ${psRes.status}: ${errText.substring(0, 150)}`);
         }
-        console.log(`[${logId}] [STEP 2] PageSpeed OK: ${score}/100 in ${Date.now() - t}ms. Screenshot: ${pageSpeedData.screenshot ? 'Yes' : 'No'}`);
-      } else {
-        const errText = await psRes.text();
-        console.warn(`[${logId}] [STEP 2 WARN] PageSpeed HTTP ${psRes.status}: ${errText.substring(0, 200)}`);
+      } catch (err) {
+        console.error(`[${logId}] [PHASE 1] PageSpeed FAIL: ${err.message}`);
       }
-    } catch (err) {
-      console.error(`[${logId}] [STEP 2 FAIL] ${err.message}`);
-    }
+      return data;
+    })();
 
-    // ──── Build Image Parts (shared between both calls) ────
+    // Wait for BOTH scrape and PageSpeed to finish before AI calls
+    const [mainHtml, pageSpeedData] = await Promise.all([scrapePromise, pageSpeedPromise]);
+    console.log(`[${logId}] [PHASE 1 DONE] ${Date.now() - globalStart}ms elapsed`);
+
+    // ══════════════════════════════════════════════════
+    // PHASE 2: Both AI calls IN PARALLEL
+    //   (Both need Phase 1 results, but not each other)
+    // ══════════════════════════════════════════════════
     const imageParts = [];
     if (pageSpeedData.screenshot) {
       imageParts.push({ inlineData: { mimeType: pageSpeedData.mimeType, data: pageSpeedData.screenshot } });
     }
 
-    // ──── Shared context string (compact) ────
     const siteContext = `URL: ${url}\nPageSpeed: ${pageSpeedData.scoreText}\nUser Goals: ${context || "N/A"}`;
+    console.log(`[${logId}] [PHASE 2] Launching both AI calls in parallel... Image: ${imageParts.length > 0 ? 'Yes' : 'No'}`);
 
-    // ──── STEP 3: AI Call 1 — Overview (Score, Summary, Strengths, Quick Wins) ────
-    console.log(`[${logId}] [STEP 3] AI Call 1: Overview...`);
-    const overviewPrompt = `You are an Elite CRO Director. Analyze this website data and screenshot.
+    const overviewPromise = (async () => {
+      const prompt = `You are an Elite CRO Director. Analyze this website data and screenshot.
 
 CRITICAL RULES:
 - summary: MAX 60 words. Be specific about what works and what doesn't.
@@ -193,13 +207,14 @@ ${siteContext}
 [HTML STRUCTURE]:
 ${mainHtml}`;
 
-    const t3 = Date.now();
-    const overview = await callGemini(logId, overviewPrompt, imageParts, OVERVIEW_SCHEMA);
-    console.log(`[${logId}] [STEP 3] Overview done in ${Date.now() - t3}ms. Score: ${overview.overall_score}. Strengths: ${overview.strengths?.length}. Wins: ${overview.quick_wins?.length}`);
+      const t = Date.now();
+      const result = await callGemini(logId, prompt, imageParts, OVERVIEW_SCHEMA);
+      console.log(`[${logId}] [PHASE 2] Overview done in ${Date.now() - t}ms. Score: ${result.overall_score}`);
+      return result;
+    })();
 
-    // ──── STEP 4: AI Call 2 — Recommendations ────
-    console.log(`[${logId}] [STEP 4] AI Call 2: Recommendations...`);
-    const recsPrompt = `You are an Elite CRO Director. Based on your analysis of this website, provide exactly 5 actionable CRO recommendations.
+    const recsPromise = (async () => {
+      const prompt = `You are an Elite CRO Director. Based on your analysis of this website, provide exactly 5 actionable CRO recommendations.
 
 CRITICAL RULES:
 - Exactly 5 recommendations. No more, no less.
@@ -212,11 +227,18 @@ ${siteContext}
 [HTML STRUCTURE]:
 ${mainHtml.substring(0, 15000)}`;
 
-    const t4 = Date.now();
-    const recs = await callGemini(logId, recsPrompt, imageParts, RECOMMENDATIONS_SCHEMA);
-    console.log(`[${logId}] [STEP 4] Recommendations done in ${Date.now() - t4}ms. Count: ${recs.recommendations?.length}`);
+      const t = Date.now();
+      const result = await callGemini(logId, prompt, imageParts, RECOMMENDATIONS_SCHEMA);
+      console.log(`[${logId}] [PHASE 2] Recs done in ${Date.now() - t}ms. Count: ${result.recommendations?.length}`);
+      return result;
+    })();
 
-    // ──── STEP 5: Merge & Deliver ────
+    // Wait for both AI calls to finish
+    const [overview, recs] = await Promise.all([overviewPromise, recsPromise]);
+
+    // ══════════════════════════════════════════════════
+    // PHASE 3: Merge & Deliver
+    // ══════════════════════════════════════════════════
     const report = {
       overall_score: overview.overall_score,
       summary: overview.summary,
@@ -226,13 +248,14 @@ ${mainHtml.substring(0, 15000)}`;
       competitor_analysis: { overview: "", comparisons: [] }
     };
 
-    console.log(`[${logId}] [DONE] Score: ${report.overall_score} | Strengths: ${report.strengths.length} | Wins: ${report.quick_wins.length} | Recs: ${report.recommendations.length}`);
+    const totalTime = Date.now() - globalStart;
+    console.log(`[${logId}] [DONE] Score: ${report.overall_score} | Strengths: ${report.strengths.length} | Wins: ${report.quick_wins.length} | Recs: ${report.recommendations.length} | Total: ${totalTime}ms`);
     console.log(`[${logId}] ════════════════════════════════════════`);
 
     return res.status(200).json(report);
 
   } catch (err) {
-    console.error(`[${logId}] [FATAL]`, err);
+    console.error(`[${logId}] [FATAL] ${err.message} (${Date.now() - globalStart}ms elapsed)`);
     return res.status(500).json({ error: err.message });
   }
 }
