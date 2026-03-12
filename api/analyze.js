@@ -136,7 +136,7 @@ export default async function handler(req, res) {
         const t = Date.now();
         const pageRes = await fetch(url, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-          signal: AbortSignal.timeout(8000)
+          signal: AbortSignal.timeout(15000)
         });
         const html = sanitizeHtml(await pageRes.text());
         console.log(`[${logId}] [PHASE 1] Scrape OK: ${html.length} chars in ${Date.now() - t}ms`);
@@ -155,7 +155,7 @@ export default async function handler(req, res) {
       try {
         const t = Date.now();
         console.log(`[${logId}] [PHASE 1] PageSpeed starting...`);
-        const psRes = await fetch(psUrl, { signal: AbortSignal.timeout(25000) });
+        const psRes = await fetch(psUrl, { signal: AbortSignal.timeout(90000) });
         if (psRes.ok) {
           const psData = await psRes.json();
           const score = Math.round(psData.lighthouseResult?.categories?.performance?.score * 100);
