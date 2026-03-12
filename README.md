@@ -1,16 +1,56 @@
-# React + Vite
+# 🚀 GROWAGENT: Advanced CRO AI Audit Agent
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) audit tool. It scrapes live website data, analyzes visual hierarchies, and generates comprehensive revenue-boosting strategies using Gemini 2.5 Flash and Google PageSpeed Insights.
 
-Currently, two official plugins are available:
+## ✨ Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Live Site Analysis**: Extracts HTML structure and DOM hierarchy in real-time.
+- **Multimodal AI**: Uses visual screenshots + code context for 360-degree audits.
+- **Competitive Intelligence**: Compare your site against up to 2 specific competitors.
+- **Actionable Dashboard**: Prioritized recommendations (High/Medium/Low) with code patches and A/B test copy.
+- **Dynamic UX**: Premium, dark-mode dashboard with real-time system logs.
 
-## React Compiler
+## 🛠 Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend**: React + Vite
+- **Styling**: Tailwind CSS + Lucide Icons
+- **AI Engine**: Google Gemini 2.5 Flash
+- **Analysis**: Google PageSpeed Insights API
 
-## Expanding the ESLint configuration
+## 🚀 Getting Started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Prerequisites
+
+- Node.js 18+
+- A Google Gemini API Key
+
+### Installation
+
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/ammargrowme/cro-ai-agent.git
+   cd cro-ai-agent
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Setup environment variables:
+   Create a `.env` file in the root and add:
+   ```env
+   VITE_GEMINI_API_KEY=your_gemini_api_key_here
+   ```
+
+4. Run locally:
+   ```bash
+   npm run dev
+   ```
+
+## 🌐 Hosting
+
+Hosted automatically on Vercel/Netlify via GitHub integration.
+
+---
+Built with ❤️ by [ammargrowme](https://github.com/ammargrowme)
