@@ -50,24 +50,6 @@ import {
 // Backend routes now handle AI logic.
 // VITE_GEMINI_API_KEY is now only used on the server (Vercel).
 
-const fetchLivePageSpeedAndScreenshot = async (url, customKey = "") => {
-  try {
-    const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance${customKey ? `&key=${customKey}` : ''}`;
-    const response = await fetch(apiUrl);
-    if (!response.ok) return { scoreText: "Unavailable", screenshot: null };
-    const data = await response.json();
-    const score = data.lighthouseResult?.categories?.performance?.score * 100;
-    const screenshotData = data.lighthouseResult?.audits?.['final-screenshot']?.details?.data;
-    return {
-      scoreText: score ? `Score: ${score}/100` : "Unavailable",
-      screenshot: screenshotData ? screenshotData.replace(/^data:image\/\w+;base64,/, "") : null,
-      mimeType: "image/jpeg"
-    };
-  } catch (e) {
-    return { scoreText: "Unavailable", screenshot: null };
-  }
-};
-
 // --- BRANDING CONSTANTS ---
 const BRAND = {
   primary: "#F25430",
@@ -273,24 +255,25 @@ export default function App() {
       setCurrentStep(0);
       const competitors = competitorsInput.split(',').map(s => s.trim()).filter(s => s.length > 0).slice(0, 2);
       
-      // Fetch PageSpeed on frontend to avoid 10s Vercel timeout
-      setCurrentStep(1);
-      const pageSpeedData = await fetchLivePageSpeedAndScreenshot(formattedUrl, customPageSpeedKey.trim());
-      
-      setCurrentStep(3);
       const payload = {
         url: formattedUrl,
         context: additionalContext,
         competitors: competitors.map(c => c.startsWith('http') ? c : `https://${c}`),
-        pageSpeedData // Send pre-fetched data to backend
+        customPageSpeedKey: customPageSpeedKey.trim()
       };
+
+      // Interval to update current step based on typical timing
+      const stepInterval = setInterval(() => {
+        setCurrentStep(prev => (prev < 3 ? prev + 1 : prev));
+      }, 5000);
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
+      
+      clearInterval(stepInterval);
       setCurrentStep(4);
 
       if (!response.ok) {

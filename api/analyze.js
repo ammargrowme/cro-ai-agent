@@ -49,7 +49,7 @@ const fetchWithRetry = async (url, options, retries = 3) => {
       const response = await fetch(url, options);
       if (!response.ok) {
         const errBody = await response.text();
-        console.error(`Fetch error ${response.status}:`, errBody);
+        console.error(`Fetch error ${response.status} for ${url.substring(0, 50)}:`, errBody);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       return await response.json();
@@ -57,6 +57,23 @@ const fetchWithRetry = async (url, options, retries = 3) => {
       console.error(`Attempt ${i + 1} failed: ${e.message}`);
       if (i === retries - 1) throw e;
       await new Promise(res => setTimeout(res, delays[i]));
+    }
+  }
+};
+
+const safeParseJSON = (text) => {
+  if (!text) return null;
+  try {
+    // Try clean parse
+    return JSON.parse(text);
+  } catch (e) {
+    // Try stripping markdown blocks
+    const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch (e2) {
+      console.error("JSON Parse Critical Failure:", text.substring(0, 500));
+      return null;
     }
   }
 };
@@ -111,9 +128,32 @@ export default async function handler(req, res) {
       competitorsHtmlStr = (await Promise.all(compPromises)).join('\n');
     }
 
-    // 3. PageSpeed & Screenshot (Passed from Frontend to avoid Vercel 10s timeout)
-    const pageSpeedData = req.body.pageSpeedData || { scoreText: "Unavailable", screenshot: null, mimeType: "image/jpeg" };
-    console.log(`[DATA] Received PageSpeed data: ${pageSpeedData.scoreText}`);
+    // 3. PageSpeed & Screenshot
+    console.log(`[PAGESPEED] Fetching metrics via Google API...`);
+    const psKey = customPageSpeedKey || apiKey;
+    const psUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance${psKey ? `&key=${psKey}` : ''}`;
+    
+    let pageSpeedData = { scoreText: "Unavailable", screenshot: null, mimeType: "image/jpeg" };
+    try {
+      const psRes = await fetch(psUrl);
+      if (psRes.ok) {
+        const psData = await psRes.json();
+        const score = psData.lighthouseResult?.categories?.performance?.score * 100;
+        pageSpeedData.scoreText = score ? `Score: ${score}/100` : "Unavailable";
+        const screenshotData = psData.lighthouseResult?.audits?.['final-screenshot']?.details?.data;
+        if (screenshotData) {
+            const match = screenshotData.match(/^data:([^;]+);base64,/);
+            if (match) pageSpeedData.mimeType = match[1];
+            pageSpeedData.screenshot = screenshotData.replace(/^data:image\/\w+;base64,/, "");
+        }
+        console.log(`[PAGESPEED] Success. Score: ${score || 'N/A'}`);
+      } else {
+        const errTxt = await psRes.text();
+        console.warn(`[PAGESPEED] API returned status ${psRes.status}:`, errTxt);
+      }
+    } catch (err) {
+      console.error(`[PAGESPEED] Failed: ${err.message}`);
+    }
 
     // 4. Gemini Synthesis
     console.log(`[GEMINI] Preparing multi-modal payload...`);
@@ -192,14 +232,13 @@ FINAL RULE: Return ONLY a valid JSON object matching the requested schema. No co
       throw new Error("Empty response from AI engine.");
     }
 
-    let report;
-    try {
-      report = JSON.parse(reportText);
-      console.log(`[SUCCESS] Analysis complete. Generated ${report.recommendations?.length || 0} recommendations.`);
-    } catch (parseErr) {
-      console.error("[GEMINI] Failed to parse JSON response:", reportText.substring(0, 500));
+    let report = safeParseJSON(reportText);
+    if (!report) {
+      console.error("[GEMINI] Failed to parse JSON response content.");
       throw new Error("AI returned invalid data format.");
     }
+
+    console.log(`[SUCCESS] Analysis complete. Generated ${report.recommendations?.length || 0} recommendations.`);
     
     return res.status(200).json(report);
 
