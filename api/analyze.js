@@ -207,8 +207,8 @@ FINAL RULE: Return ONLY a valid JSON object matching the requested schema. No co
       });
     }
 
-    console.log(`[GEMINI] Payload ready. Prompt length: ${promptText.length} chars.`);
-    console.log(`[GEMINI] Sending request to Google...`);
+    console.log(`[GEMINI] Payload ready. Prompt: ${promptText.length} chars. Image: ${pageSpeedData.screenshot ? 'Yes' : 'No'}`);
+    console.log(`[GEMINI] Sending request to Google (Model: ${model})...`);
     
     const startTime = Date.now();
     const geminiResult = await fetchWithRetry(geminiUrl, {
@@ -219,26 +219,33 @@ FINAL RULE: Return ONLY a valid JSON object matching the requested schema. No co
         generationConfig: {
           responseMimeType: "application/json",
           responseSchema: { type: "OBJECT", properties: REPORT_SCHEMA_PROPERTIES },
-          temperature: 0.1
+          temperature: 0.1,
+          maxOutputTokens: 8192
         }
       })
     });
 
-    console.log(`[GEMINI] Response received in ${Date.now() - startTime}ms`);
+    const duration = Date.now() - startTime;
+    console.log(`[GEMINI] Response received in ${duration}ms`);
 
     const reportText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!reportText) {
-      console.error("[GEMINI] Fatal: No text in candidates.");
+      console.error("[GEMINI] Fatal: No text in candidates array.");
       throw new Error("Empty response from AI engine.");
     }
 
+    console.log(`[GEMINI] Raw text length: ${reportText.length} chars.`);
+    
     let report = safeParseJSON(reportText);
     if (!report) {
-      console.error("[GEMINI] Failed to parse JSON response content.");
-      throw new Error("AI returned invalid data format.");
+      const isTruncated = reportText.length > 0 && !reportText.trim().endsWith("}");
+      console.error(`[GEMINI] JSON Parse Failure. ${isTruncated ? 'RESPONSE DETECTED AS TRUNCATED.' : ''}`);
+      console.error(`[GEMINI] Raw Head: ${reportText.substring(0, 100)}...`);
+      console.error(`[GEMINI] Raw Tail: ...${reportText.slice(-100)}`);
+      throw new Error(`AI generated invalid or truncated data (${reportText.length} chars).`);
     }
 
-    console.log(`[SUCCESS] Analysis complete. Generated ${report.recommendations?.length || 0} recommendations.`);
+    console.log(`[SUCCESS] Analysis complete for ${url}. Recommendations: ${report.recommendations?.length || 0}`);
     
     return res.status(200).json(report);
 
