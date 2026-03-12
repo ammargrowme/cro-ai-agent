@@ -47,14 +47,8 @@ import {
   Key
 } from "lucide-react";
 
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
-
-// --- GEMINI ENDPOINT ROUTER ---
-const getGeminiEndpoint = (key) => {
-  // Using standard public model alias to avoid environment-specific 401/404 errors
-  const model = "gemini-2.5-flash";
-  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-};
+// Backend routes now handle all AI and data fetching.
+// VITE_GEMINI_API_KEY is now only used on the server (Vercel).
 
 // --- BRANDING CONSTANTS ---
 const BRAND = {
@@ -139,223 +133,7 @@ const setSafeLocalStorage = (key, value) => {
   try { localStorage.setItem(key, value); } catch (e) { }
 };
 
-// --- CORE FETCH UTILITY ---
-const fetchWithRetry = async (url, options, retries = 5, addLog = null) => {
-  const delays = [1000, 2000, 4000, 8000, 16000];
-  for (let i = 0; i < retries; i++) {
-    try {
-      if (addLog && i > 0) addLog(`Retrying request (Attempt ${i + 1}/${retries})...`, 'warn');
-      const response = await fetch(url, options);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      return await response.json();
-    } catch (e) {
-      if (addLog) addLog(`Request error: ${e.message}`, 'error');
-      if (i === retries - 1) throw e;
-      await new Promise(res => setTimeout(res, delays[i]));
-    }
-  }
-};
-
-// --- LIVE API TOOLS ---
-const fetchLiveHTML = async (url, addLog) => {
-  if (!url) return "";
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`
-  ];
-  let rawHtml = "";
-
-  for (const proxy of proxies) {
-    try {
-      addLog(`Attempting to scrape via proxy: ${new URL(proxy).hostname}...`, 'info');
-      const startTime = Date.now();
-      const response = await fetch(proxy);
-      if (response.ok) {
-        rawHtml = await response.text();
-        addLog(`Successfully fetched HTML in ${Date.now() - startTime}ms.`, 'success');
-        break;
-      } else {
-        addLog(`Proxy returned status ${response.status}.`, 'warn');
-      }
-    } catch (error) {
-      addLog(`Proxy failed: ${error.message}`, 'warn');
-    }
-  }
-
-  if (!rawHtml) {
-    addLog(`All HTML scraping proxies failed. Relying strictly on URL context.`, 'error');
-    return `Failed to scrape ${url}.`;
-  }
-
-  // Clean HTML to save tokens
-  addLog(`Sanitizing HTML payload (removing scripts/styles)...`, 'info');
-  const cleanHtml = rawHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '[ICON]')
-    .substring(0, 20000);
-
-  addLog(`Final HTML payload size: ${(cleanHtml.length / 1024).toFixed(2)} KB.`, 'info');
-  return cleanHtml;
-};
-
-const fetchLivePageSpeedAndScreenshot = async (url, addLog, pageSpeedKey = "") => {
-  const maxRetries = 4;
-  const initialDelay = 2000; // Start with a 2-second delay
-
-  addLog(`Initiating Google PageSpeed Insights scan${pageSpeedKey ? ' (using custom API key)' : ''}...`, 'info');
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const startTime = Date.now();
-      const activeKey = pageSpeedKey || apiKey;
-      const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance${activeKey ? `&key=${activeKey}` : ''}`;
-      const response = await fetch(apiUrl);
-
-      if (response.status === 429) {
-        if (!activeKey) {
-          addLog(`PageSpeed Rate Limited (429). Click the '+' icon to add a free API Key string in 'Advanced Options' to bypass limits.`, 'warn');
-          return { scoreText: "Performance data unavailable (Rate Limited).", screenshotBase64: null };
-        }
-        const delay = initialDelay * Math.pow(2, i); // Exponential backoff: 2s, 4s, 8s, 16s
-        addLog(`PageSpeed Rate Limited (429). Retrying in ${delay / 1000}s (Attempt ${i + 1}/${maxRetries})...`, 'warn');
-        await new Promise(res => setTimeout(res, delay));
-        continue;
-      }
-
-      if (!response.ok) {
-        addLog(`PageSpeed API failed with status: ${response.status}. Falling back gracefully.`, 'error');
-        return { scoreText: "Performance data unavailable.", screenshotBase64: null };
-      }
-
-      const data = await response.json();
-      addLog(`PageSpeed scan complete in ${Date.now() - startTime}ms.`, 'success');
-
-      const score = data.lighthouseResult?.categories?.performance?.score * 100 || null;
-      const scoreText = score ? `Performance Score: ${score}/100` : "Performance data unavailable.";
-      addLog(`Extracted Score: ${scoreText}`, 'info');
-
-      const screenshotBase64 = data.lighthouseResult?.audits?.['final-screenshot']?.details?.data || null;
-      if (screenshotBase64) {
-        // Calculate rough MB size of base64 string
-        const sizeInMB = (screenshotBase64.length * 0.75) / (1024 * 1024);
-        addLog(`Extracted Base64 Screenshot (${sizeInMB.toFixed(2)} MB)`, 'success');
-      } else {
-        addLog(`No screenshot data available in PageSpeed payload.`, 'warn');
-      }
-
-      return { scoreText, screenshotBase64 };
-    } catch (error) {
-      addLog(`PageSpeed fetch error: ${error.message}. Retrying...`, 'warn');
-      const delay = initialDelay * Math.pow(2, i);
-      await new Promise(res => setTimeout(res, delay));
-    }
-  }
-
-  addLog(`PageSpeed API exhausted all retries. Proceeding without performance data.`, 'error');
-  return { scoreText: "Performance data unavailable.", screenshotBase64: null };
-};
-
-const generateFunFacts = async (geminiKey = "") => {
-  // Use user-provided key or fallback to environment key.
-  const activeKey = geminiKey || apiKey;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`;
-  const payload = {
-    contents: [{ parts: [{ text: "Provide 4 highly interesting, data-backed, and up-to-date Conversion Rate Optimization (CRO) statistics or fun facts. Make them punchy. Return ONLY a valid JSON array of 4 strings." }] }],
-    generationConfig: { responseMimeType: "application/json", responseSchema: { type: "ARRAY", items: { type: "STRING" } } }
-  };
-  try {
-    const response = await fetchWithRetry(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    let text = response.candidates?.[0]?.content?.parts?.[0]?.text;
-    const codeBlockRegex = new RegExp('`{3}(?:json)?', 'gi');
-    text = text.replace(codeBlockRegex, '').trim();
-    return JSON.parse(text);
-  } catch (e) { return DEFAULT_FUN_FACTS; }
-};
-
-const generateGeminiReport = async (url, context, pageHtml, pageSpeedData, competitorsHtml, addLog) => {
-  const endpoint = getGeminiEndpoint(apiKey);
-
-  addLog(`Constructing Gemini API Prompt...`, 'info');
-  let promptText = `Act as an elite Conversion Rate Optimization (CRO) analyst for a top-tier digital marketing agency. Perform a highly detailed CRO audit for the primary website: ${url}. 
-  
-  [PRIMARY SITE LIVE HTML]: 
-${pageHtml}
- 
-  [PRIMARY SITE PageSpeed]: 
-${pageSpeedData.scoreText}
-`;
-
-  if (pageSpeedData.screenshotBase64) {
-    promptText += `
-[PRIMARY SITE SCREENSHOT]: Included as an image attachment. Analyze the visual hierarchy, above-the-fold layout, CTA placement, and design aesthetics based on this image.`;
-  }
-
-  if (competitorsHtml) {
-    promptText += `
-[COMPETITOR HTML DATA FOR COMPARISON]: 
-${competitorsHtml}
-
-    You MUST populate the competitor_analysis schema field by comparing the primary site against these competitors. Analyze structural differences, headline effectiveness, and positioning.`;
-  }
-
-  if (context) promptText += `
-
-[USER CONTEXT/GOALS]: ${context}
-Consider this niche/focus deeply in your recommendations.`;
-
-  promptText += `
-Provide specific, actionable recommendations based on actual code, speed metrics, and visual hierarchy. Ensure your output accurately strictly maps to the requested JSON schema. It is very critical that strengths and quick_wins properties are flat string arrays.`;
-
-  const partsArray = [{ text: promptText }];
-
-  if (pageSpeedData.screenshotBase64) {
-    addLog(`Attaching multimodal image payload to Gemini request...`, 'info');
-    const base64Data = pageSpeedData.screenshotBase64.replace(/^data:image\/\w+;base64,/, "");
-    partsArray.push({
-      inlineData: {
-        mimeType: "image/jpeg",
-        data: base64Data
-      }
-    });
-  }
-
-  const payload = {
-    contents: [{ parts: partsArray }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: { type: "OBJECT", properties: REPORT_SCHEMA_PROPERTIES },
-      temperature: 0.1
-    }
-  };
-
-  try {
-    addLog(`Sending Master Request to Gemini AI Engine...`, 'info');
-    const startTime = Date.now();
-    const result = await fetchWithRetry(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, 5, addLog);
-
-    addLog(`Gemini responded in ${((Date.now() - startTime) / 1000).toFixed(2)}s.`, 'success');
-
-    let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("No text data returned from AI candidate.");
-
-    addLog(`Parsing JSON schema...`, 'info');
-    const parsedData = safeParseJSON(text);
-
-    // Quick validation check
-    if (!parsedData.overall_score || !parsedData.recommendations) {
-      addLog(`Warning: JSON parsed but missing core schema properties.`, 'warn');
-    } else {
-      addLog(`Schema validated successfully. Outputting to dashboard.`, 'success');
-    }
-
-    return parsedData;
-  } catch (error) {
-    addLog(`AI Generation Fatal Error: ${error.message}`, 'error');
-    console.error("AI Generation Failed:", error);
-    throw error;
-  }
-};
-
+// --- ICONS AND UI CATEGORIZATION ---
 const getIconForCategory = (category, size = 18) => {
   if (!category) return <Type size={size} />;
   const cat = category.toLowerCase();
@@ -398,9 +176,7 @@ export default function App() {
   const [loadingPhrase, setLoadingPhrase] = useState(LOADING_PHRASES[0]);
   const [analysisSteps, setAnalysisSteps] = useState([]);
 
-  // System Console Logs
-  const [logs, setLogs] = useState([]);
-  const logsEndRef = useRef(null);
+  // No longer using UI logs
 
   // Wrapped Story States
   const [countdown, setCountdown] = useState(3);
@@ -427,13 +203,10 @@ export default function App() {
     setSafeLocalStorage("growagent_pagespeed_key", customPageSpeedKey);
   }, [customPageSpeedKey]);
 
-  // Logging Helper
-  const addLog = (msg, type = 'info') => {
-    setLogs(prev => [...prev, { id: Date.now() + Math.random(), time: new Date().toLocaleTimeString([], { hour12: false }), msg, type }]);
-  };
+  // No addLog needed
 
   useEffect(() => { if (chatHistory.length > 0) chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
-  useEffect(() => { if (logsEndRef.current && status === "analyzing") logsEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [logs, status]);
+  // Scroll to chat only
 
   useEffect(() => {
     let phraseInterval, factsInterval;
@@ -465,77 +238,61 @@ export default function App() {
     let formattedUrl = url.startsWith('http') ? url : `https://${url}`;
     setUrl(formattedUrl);
     setAppError(null);
-    setLogs([]); // Clear previous logs
-    addLog(`Analysis initialized for ${formattedUrl}`, 'info');
-
+    
     const hasCompetitors = competitorsInput.trim().length > 0;
     const dynamicSteps = [
-      { id: 'scrape', label: 'Extracting live HTML architecture...', icon: <Code size={18} /> },
-      ...(hasCompetitors ? [{ id: 'compete', label: 'Scraping competitor topologies...', icon: <Swords size={18} /> }] : []),
-      { id: 'metrics', label: 'Fetching Google PageSpeed Insights...', icon: <Activity size={18} /> },
-      { id: 'screenshot', label: 'Processing LIVE visual hierarchy...', icon: <MonitorSmartphone size={18} /> },
+      { id: 'scrape', label: 'Extracting Site Architecture...', icon: <Code size={18} /> },
+      { id: 'metrics', label: 'Analyzing Core Web Vitals...', icon: <Activity size={18} /> },
+      { id: 'screenshot', label: 'Evaluating Visual Hierarchy...', icon: <MonitorSmartphone size={18} /> },
       { id: 'claude', label: 'Synthesizing AI Revenue Strategy...', icon: <BrainCircuit size={18} /> },
     ];
     setAnalysisSteps(dynamicSteps);
 
     setStatus("analyzing"); setCurrentStep(0); setReport(null); setCodePatches({}); setAbTests({}); setFunFacts(DEFAULT_FUN_FACTS);
-    setChatHistory([{ role: "model", parts: [{ text: "Hi! I'm your CRO AI Assistant. I've just completed the audit above. What specific areas would you like to discuss or dive deeper into? If I got something wrong about your audience, tell me and I'll update the report!" }] }]);
-
-    generateFunFacts().then(facts => { if (facts && facts.length >= 2) setFunFacts(facts); });
+    setChatHistory([{ role: "model", parts: [{ text: "Hi! I'm your CRO AI Assistant. I've just completed the audit above. What specific areas would you like to discuss or dive deeper into?" }] }]);
 
     try {
-      // Step 0: Scrape Main HTML 
+      // Step-by-step UI progress (simulated for better UX as the backend does all the work now)
       setCurrentStep(0);
-      const liveHtml = await fetchLiveHTML(formattedUrl, addLog);
+      const competitors = competitorsInput.split(',').map(s => s.trim()).filter(s => s.length > 0).slice(0, 2);
+      
+      const payload = {
+        url: formattedUrl,
+        context: additionalContext,
+        competitors: competitors.map(c => c.startsWith('http') ? c : `https://${c}`),
+        customPageSpeedKey: customPageSpeedKey.trim()
+      };
 
-      let stepIndex = 1;
-      let competitorsHtmlStr = "";
+      // Interval to update current step based on typical timing
+      const stepInterval = setInterval(() => {
+        setCurrentStep(prev => (prev < 3 ? prev + 1 : prev));
+      }, 4000);
 
-      // Step 1: Competitors (Optional)
-      if (hasCompetitors) {
-        setCurrentStep(stepIndex);
-        const compUrls = competitorsInput.split(',').map(s => s.trim()).filter(s => s.length > 0).slice(0, 2);
-        addLog(`Found ${compUrls.length} competitors. Initiating parallel scraping...`, 'info');
-        const compHtmlPromises = compUrls.map(async (cUrl) => {
-          const fmt = cUrl.startsWith('http') ? cUrl : `https://${cUrl}`;
-          return `--- URL: ${fmt} ---\n${await fetchLiveHTML(fmt, addLog)}\n`;
-        });
-        const results = await Promise.all(compHtmlPromises);
-        competitorsHtmlStr = results.join('\n');
-        addLog(`Competitor scraping complete.`, 'success');
-        stepIndex++;
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      clearInterval(stepInterval);
+      setCurrentStep(4);
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Internal Server Error");
       }
 
-      // Step 2 & 3: PageSpeed API & Live Screenshot Extraction
-      setCurrentStep(stepIndex);
-      const pageSpeedData = await fetchLivePageSpeedAndScreenshot(formattedUrl, addLog, customPageSpeedKey.trim());
-      stepIndex++;
-
-      setCurrentStep(stepIndex);
-      addLog(`Preparing Multi-Modal AI Payload...`, 'info');
-      await new Promise(resolve => setTimeout(resolve, 600));
-      stepIndex++;
-
-      // Step 4: Claude/Gemini 
-      setCurrentStep(stepIndex);
-      const realReport = await generateGeminiReport(formattedUrl, additionalContext, liveHtml, pageSpeedData, competitorsHtmlStr, addLog);
-
-      setCurrentStep(stepIndex + 1);
-
+      const realReport = await response.json();
+      
       if (realReport) {
         setReport(realReport);
         setCountdown(3);
         setStatus("wrapped_countdown");
       } else {
-        setAppError("The AI failed to generate a valid JSON report. Check the console logs for exact parsing errors.");
-        setStatus("idle");
+        throw new Error("Empty report received.");
       }
     } catch (err) {
-      if (err.message.includes("401") || err.message.includes("403") || err.message.includes("404")) {
-        setAppError("Authentication or Endpoint error with the Gemini API. Please check your API key configuration.");
-      } else {
-        setAppError(`Pipeline Error: ${err.message || "Network issue"}. See console below for details.`);
-      }
+      setAppError(`Analysis Failed: ${err.message}. Please check Vercel Logs for technical details.`);
       setStatus("idle");
     }
   };
@@ -555,28 +312,21 @@ export default function App() {
     const newHistory = [...chatHistory, userMessage];
     setChatHistory(newHistory); setChatInput(""); setIsChatLoading(true);
 
-    const endpoint = getGeminiEndpoint(apiKey);
     const payload = {
-      systemInstruction: {
-        parts: [{
-          text: `You are a helpful CRO Strategy Assistant representing a top-tier digital marketing agency. CURRENT REPORT STATE: ${JSON.stringify(report)}. 
-        CRITICAL INSTRUCTION: If the user provides new context that changes the situation, you MUST update the report to reflect this. Remove invalid recommendations, add new ones, or tweak the score.
-        You MUST respond with a JSON object containing: 1. "message": Your reply to the user 2. "updated_report": The FULL modified report matching the schema.` }]
-      },
-      contents: newHistory.map(msg => ({ role: msg.role, parts: msg.parts })),
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: { type: "OBJECT", properties: { message: { type: "STRING" }, updated_report: { type: "OBJECT", properties: REPORT_SCHEMA_PROPERTIES } } },
-        temperature: 0.1
-      }
+      history: newHistory,
+      systemInstruction: `You are a helpful CRO Strategy Assistant. CURRENT REPORT STATE: ${JSON.stringify(report)}. 
+        Respond with a JSON object: { "message": "...", "updated_report": { ... } }`
     };
 
     try {
-      const result = await fetchWithRetry(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      let responseText = result.candidates[0].content.parts[0].text;
-      const codeBlockRegex = new RegExp('`{3}(?:json)?', 'gi');
-      responseText = responseText.replace(codeBlockRegex, '').trim();
-      const responseData = JSON.parse(responseText);
+      const response = await fetch('/api/chat', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) throw new Error("Chat failed");
+      const responseData = await response.json();
 
       setChatHistory([...newHistory, { role: "model", parts: [{ text: responseData.message }] }]);
       if (responseData.updated_report && JSON.stringify(responseData.updated_report) !== JSON.stringify(report)) {
@@ -593,41 +343,38 @@ export default function App() {
 
   const handleGenerateCodePatch = async (rec) => {
     setCodePatches(prev => ({ ...prev, [rec.id]: { loading: true, code: null } }));
-    const endpoint = getGeminiEndpoint(apiKey);
-    const payload = { contents: [{ parts: [{ text: `Act as an expert frontend developer. Fix this CRO issue for ${url}.\nIssue: ${rec.issue}\nRecommendation: ${rec.recommendation}\nWrite the specific HTML and Tailwind CSS code needed. Output ONLY the raw code block.` }] }] };
+    const prompt = `Act as an expert frontend developer. Fix this CRO issue for ${url}.\nIssue: ${rec.issue}\nRecommendation: ${rec.recommendation}\nWrite specific HTML and Tailwind CSS code. Output ONLY raw code.`;
+    
     try {
-      const result = await fetchWithRetry(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      let codeText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (codeText) {
-        const regexRemoveCodeBlocks = new RegExp('`{3}[a-zA-Z]*\\n?', 'gi');
-        codeText = codeText.replace(regexRemoveCodeBlocks, '').replace(new RegExp('`{3}', 'g'), '').trim();
-      }
+      const response = await fetch('/api/generateCode', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+      const data = await response.json();
+      let codeText = data.text;
+      const codeBlockRegex = new RegExp('\`{3}[a-zA-Z]*\\n?', 'gi');
+      codeText = codeText?.replace(codeBlockRegex, '').replace(/\`{3}/g, '').trim();
       setCodePatches(prev => ({ ...prev, [rec.id]: { loading: false, code: codeText || "Code generation failed." } }));
     } catch (error) {
-      console.error("Code Generation Error:", error);
       setCodePatches(prev => ({ ...prev, [rec.id]: { loading: false, code: "Failed to generate code patch." } }));
     }
   };
 
   const handleGenerateABTests = async (rec) => {
     setAbTests(prev => ({ ...prev, [rec.id]: { loading: true, variations: null } }));
-    const endpoint = getGeminiEndpoint(apiKey);
-    const payload = {
-      contents: [{ parts: [{ text: `You are an elite CRO copywriter. Based on this issue: "${rec.issue}" and recommendation: "${rec.recommendation}", generate 3 highly persuasive, distinct A/B test copy variations (e.g., headlines, subheadlines, or CTA button text) to fix it. Keep them punchy. Context: ${additionalContext || 'General audience'}. Return ONLY a JSON array of 3 strings.` }] }],
-      generationConfig: { responseMimeType: "application/json", responseSchema: { type: "ARRAY", items: { type: "STRING" } } }
-    };
+    const prompt = `You are an elite CRO copywriter. Based on this issue: "${rec.issue}" and recommendation: "${rec.recommendation}", generate 3 A/B test copy variations. Return ONLY a JSON array of 3 strings.`;
+    
     try {
-      const result = await fetchWithRetry(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) {
-        const regexRemoveCodeBlocks = new RegExp('`{3}(?:json)?', 'gi');
-        text = text.replace(regexRemoveCodeBlocks, '').replace(new RegExp('`{3}', 'g'), '').trim();
-        const variations = JSON.parse(text);
-        setAbTests(prev => ({ ...prev, [rec.id]: { loading: false, variations: variations } }));
-      }
+      const response = await fetch('/api/generateABTests', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+      const variations = await response.json();
+      setAbTests(prev => ({ ...prev, [rec.id]: { loading: false, variations: variations } }));
     } catch (error) {
-      console.error("A/B Test Gen Error:", error);
-      setAbTests(prev => ({ ...prev, [rec.id]: { loading: false, variations: ["Failed to generate A/B tests. Please try again."] } }));
+      setAbTests(prev => ({ ...prev, [rec.id]: { loading: false, variations: ["Failed to generate A/B tests."] } }));
     }
   };
 
@@ -944,28 +691,6 @@ export default function App() {
                 })}
               </div>
 
-              {/* LIVE TERMINAL CONSOLE */}
-              <div className="mt-8 w-full bg-[#0B0C10] border border-[#242830] rounded-xl overflow-hidden shadow-inner">
-                <div className="bg-[#1A1D24] px-4 py-2 border-b border-[#242830] flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#9CA3AF] uppercase tracking-widest flex items-center gap-2">
-                    <Terminal size={14} /> System Console
-                  </span>
-                  <div className="flex gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#F87171]"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#FBBF24]"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#4ADE80]"></div>
-                  </div>
-                </div>
-                <div className="p-4 h-48 overflow-y-auto custom-scrollbar font-mono text-[11px] space-y-2 flex flex-col">
-                  {logs.map(log => (
-                    <div key={log.id} className={`flex gap-3 leading-relaxed ${log.type === 'error' ? 'text-[#F87171]' : log.type === 'success' ? 'text-[#4ADE80]' : log.type === 'warn' ? 'text-[#FBBF24]' : 'text-[#D1D5DB]'}`}>
-                      <span className="text-[#6B7280] shrink-0">[{log.time}]</span>
-                      <span className="break-words">{log.msg}</span>
-                    </div>
-                  ))}
-                  <div ref={logsEndRef} />
-                </div>
-              </div>
 
               <div className="mt-8 p-6 bg-[#0B0C10] border border-[#242830] rounded-2xl text-center relative overflow-hidden group shadow-inner max-w-xl mx-auto">
                 <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-[#F25430] to-[#D94A2A]"></div>

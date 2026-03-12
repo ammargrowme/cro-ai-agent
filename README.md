@@ -18,6 +18,7 @@ GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) au
 
 - **Live Site Scraper**: Automatically extracts HTML, CSS structure, and DOM hierarchy from any public URL.
 - **Multimodal Analysis**: Combines text-based code analysis with visual screenshot interpretation using Gemini 2.5 Flash.
+- **Secure Backend Proxy**: All API calls are routed through Vercel Serverless Functions to protect sensitive API keys.
 - **Competitor Benchmarking**: High-speed parallel scraping of competitor sites to identify market gaps.
 - **Priority-Based Strategy**: Generates High, Medium, and Low priority recommendations.
 - **Developer Handoff**: Each recommendation includes an AI-generated **Code Patch** (HTML/Tailwind) and **A/B Test Variations**.
