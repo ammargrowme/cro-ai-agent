@@ -394,6 +394,16 @@ export default function App() {
   const [flippedCards, setFlippedCards] = useState({});
   const toggleFlip = (id) => setFlippedCards(prev => ({ ...prev, [id]: !prev[id] }));
 
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.flip-card')) {
+        setFlippedCards({});
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
 
   return (
     <div style={{ background: BRAND.bgBase, minHeight: "100vh", color: BRAND.textMain, fontFamily: "'Inter', sans-serif" }} className="relative overflow-hidden">
