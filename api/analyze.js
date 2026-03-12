@@ -3,40 +3,39 @@ const apiKey = process.env.VITE_GEMINI_API_KEY || "";
 
 // --- HELPERS FROM APP.JSX ---
 const REPORT_SCHEMA_PROPERTIES = {
-  overall_score: { type: "INTEGER", description: "Score from 1 to 100" },
-  summary: { type: "STRING" },
-  strengths: { type: "ARRAY", items: { type: "STRING" } },
-  quick_wins: { type: "ARRAY", items: { type: "STRING" } },
+  overall_score: { type: "number", description: "Score from 1 to 100" },
+  summary: { type: "string" },
+  strengths: { type: "array", items: { type: "string" } },
+  quick_wins: { type: "array", items: { type: "string" } },
   competitor_analysis: {
-    type: "OBJECT",
-    description: "Only fill this if competitor URLs were analyzed",
+    type: "object",
     properties: {
-      overview: { type: "STRING" },
+      overview: { type: "string" },
       comparisons: {
-        type: "ARRAY",
+        type: "array",
         items: {
-          type: "OBJECT",
+          type: "object",
           properties: {
-            competitor: { type: "STRING" },
-            difference: { type: "STRING" },
-            advantage: { type: "STRING" }
+            competitor: { type: "string" },
+            difference: { type: "string" },
+            advantage: { type: "string" }
           }
         }
       }
     }
   },
   recommendations: {
-    type: "ARRAY",
+    type: "array",
     items: {
-      type: "OBJECT",
+      type: "object",
       properties: {
-        id: { type: "INTEGER" },
-        priority: { type: "STRING" },
-        category: { type: "STRING" },
-        issue: { type: "STRING" },
-        recommendation: { type: "STRING" },
-        expected_impact: { type: "STRING" },
-        implementation: { type: "STRING" }
+        id: { type: "number" },
+        priority: { type: "string" },
+        category: { type: "string" },
+        issue: { type: "string" },
+        recommendation: { type: "string" },
+        expected_impact: { type: "string" },
+        implementation: { type: "string" }
       }
     }
   }
@@ -221,7 +220,7 @@ OUTPUT: Valid JSON ONLY. No preamble.`;
         contents: [{ parts }],
         generationConfig: {
           responseMimeType: "application/json",
-          responseSchema: { type: "OBJECT", properties: REPORT_SCHEMA_PROPERTIES },
+          responseSchema: { type: "object", properties: REPORT_SCHEMA_PROPERTIES },
           temperature: 0.1,
           maxOutputTokens: 8192
         }
@@ -229,19 +228,27 @@ OUTPUT: Valid JSON ONLY. No preamble.`;
     });
 
     const duration = Date.now() - startTime;
-    console.log(`[${logId}] [COMPLETE] Response in ${duration}ms. JSON length: ${geminiResult.candidates?.[0]?.content?.parts?.[0]?.text?.length || 0}`);
+    console.log(`[${logId}] AI Finish in ${duration}ms.`);
 
     const reportText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!reportText) throw new Error("Empty response from AI engine.");
+    if (!reportText) throw new Error("AI returned no text content.");
 
+    console.log(`[${logId}] [DEBUG] Raw Response Length: ${reportText.length}`);
+    
     let report = safeParseJSON(reportText);
     if (!report) {
-      const isTruncated = reportText.length > 0 && !reportText.trim().endsWith("}");
-      console.error(`[${logId}] [FATAL] Parse Failed. Truncated: ${isTruncated}. Raw Tail: ${reportText.slice(-100)}`);
-      throw new Error(`Invalid data from AI (${reportText.length} chars). Try again.`);
+       console.error(`[${logId}] [DEBUG] Raw Content: ${reportText.substring(0, 1000)}`);
+       throw new Error("AI data failed to parse. Try again.");
     }
 
-    console.log(`[${logId}] [SUCCESS] Report score: ${report.overall_score}. Recs: ${report.recommendations?.length}`);
+    console.log(`[${logId}] [DEBUG] Parsed Keys: ${Object.keys(report).join(', ')}`);
+    console.log(`[${logId}] [DEBUG] Rec count: ${report.recommendations?.length || 0}`);
+
+    if (report.recommendations?.length === 0) {
+        console.warn(`[${logId}] [WARN] AI returned empty recommendations list.`);
+    }
+
+    console.log(`[${logId}] [SUCCESS] Delivery successful.`);
     return res.status(200).json(report);
 
   } catch (err) {
