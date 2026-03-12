@@ -402,12 +402,120 @@ export default function App() {
       {/* Dynamic Backgrounds & Custom CSS */}
       <style>{`
         @media print {
+          /* ── GLOBAL PRINT RESET ── */
           .no-print { display: none !important; }
-          body { background: white !important; color: black !important; }
-          .print-break { page-break-inside: avoid; }
-          * { box-shadow: none !important; border-color: #ddd !important; }
-          .print-invert-bg { background: white !important; border: 1px solid #ccc !important; }
-          .print-invert-text { color: black !important; }
+          body, html { 
+            background: white !important; 
+            color: #111 !important; 
+            font-size: 11pt !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          * { 
+            box-shadow: none !important; 
+            text-shadow: none !important;
+            animation: none !important;
+            transition: none !important;
+          }
+          .print-break { page-break-inside: avoid; break-inside: avoid; }
+          
+          /* ── LAYOUT OVERRIDES ── */
+          main { padding: 0 !important; max-width: 100% !important; }
+          .print-invert-bg { background: #f9f9f9 !important; border: 1px solid #ddd !important; }
+          .print-invert-text { color: #111 !important; }
+
+          /* ── HEADER: Show clean brand ── */
+          .sticky { 
+            position: relative !important; 
+            background: white !important; 
+            border-bottom: 3px solid #F25430 !important;
+            padding: 12px 20px !important;
+          }
+
+          /* ── TOP WIDGETS: Fix score circle ── */
+          svg circle { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
+          
+          /* ── FLIP CARDS: Flatten entirely for print ── */
+          .flip-card {
+            perspective: none !important;
+            height: auto !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            margin-bottom: 16px !important;
+          }
+          .flip-card-inner {
+            position: relative !important;
+            transform: none !important;
+            transform-style: flat !important;
+          }
+          .flip-card-front {
+            position: relative !important;
+            background: #f9f9f9 !important;
+            border: 1px solid #ddd !important;
+            border-radius: 12px !important;
+            color: #111 !important;
+            height: auto !important;
+          }
+          .flip-card-front * { color: #333 !important; }
+          .flip-card-front [style*="color: rgb(255, 255, 255)"],
+          .flip-card-front [style*="color: #fff"],
+          .flip-card-front .text-white { color: #111 !important; }
+          .flip-card-back {
+            position: relative !important;
+            transform: none !important;
+            backface-visibility: visible !important;
+            background: white !important;
+            border: 1px solid #F25430 !important;
+            border-radius: 12px !important;
+            margin-top: 8px !important;
+            height: auto !important;
+            page-break-inside: avoid !important;
+          }
+          .flip-card-back * { color: #333 !important; }
+          .flip-card-back .text-white { color: #111 !important; }
+          .flip-card-back [style*="color: rgb(242"] { color: #F25430 !important; }
+
+          /* ── GRID: Force 2-column for print ── */
+          .grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3 {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 16px !important;
+          }
+
+          /* ── LIST VIEW: Clean spacing ── */
+          .space-y-6 > * {
+            background: #f9f9f9 !important;
+            border: 1px solid #ddd !important;
+            page-break-inside: avoid !important;
+          }
+
+          /* ── COLORS: Make priority badges readable ── */
+          [class*="rounded-full"][class*="tracking-widest"] {
+            border: 1px solid currentColor !important;
+            background: transparent !important;
+            print-color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
+          }
+
+          /* ── IMPACT BARS: Force color print ── */
+          [class*="rounded-sm"][class*="shadow"] {
+            print-color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
+          }
+
+          /* ── AMBIENT ELEMENTS: Hide ── */
+          .animate-blob, .animate-ping, .animate-pulse,
+          .bg-grid-pattern, .ai-engine-graphic,
+          [class*="blur-"], [class*="opacity-5"],
+          [class*="opacity-10"], [class*="pointer-events-none"][class*="absolute"] {
+            display: none !important;
+          }
+
+          /* ── PAGE MARGINS ── */
+          @page {
+            size: A4;
+            margin: 1.5cm 1.5cm 2cm 1.5cm;
+          }
         }
         @keyframes shimmer { 0% { transform: translateX(-100%) skewX(-15deg); } 100% { transform: translateX(200%) skewX(-15deg); } }
         .animate-shimmer { animation: shimmer 2.5s infinite linear; }
