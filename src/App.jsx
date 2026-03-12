@@ -205,8 +205,8 @@ export default function App() {
 
   // No addLog needed
 
-  useEffect(() => { if (chatHistory.length > 0) chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
-  // Scroll to chat only
+  const chatContainerRef = useRef(null);
+  useEffect(() => { if (chatHistory.length > 0 && chatContainerRef.current) { chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight; } }, [chatHistory]);
 
   useEffect(() => {
     let phraseInterval, factsInterval;
@@ -384,13 +384,15 @@ export default function App() {
       content += `## Competitive Intelligence\n${report.competitor_analysis.overview}\n\n`;
       report.competitor_analysis.comparisons.forEach(c => { content += `### vs ${c.competitor}\n- **Difference**: ${c.difference}\n- **Our Advantage**: ${c.advantage}\n\n`; });
     }
-    content += `## Prioritized Strategy\n${(report.recommendations || []).map(r => `### [${r.priority.toUpperCase()}] ${r.category}\n- **Issue**: ${r.issue}\n- **Recommendation**: ${r.recommendation}\n- **Impact**: ${r.expected_impact}\n- **Implementation**: ${r.implementation}\n`).join('\n')}`;
+    content += `## Prioritized Strategy\n${(report.recommendations || []).map(r => `### [${(r.priority || 'Medium').toUpperCase()}] ${r.category || 'General'}\n- **Issue**: ${r.issue || 'N/A'}\n- **Recommendation**: ${r.recommendation || 'N/A'}\n- **Impact**: ${r.expected_impact || 'N/A'}\n- **Implementation**: ${r.implementation || 'N/A'}\n`).join('\n')}`;
     const blob = new Blob([content], { type: 'text/markdown' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `GrowAgent_${new URL(url).hostname}.md`; a.click();
   };
 
   const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); };
-  const filteredRecommendations = report?.recommendations?.filter(r => activeTab === 'all' || r.category === activeTab || r.priority === activeTab) || [];
+  const filteredRecommendations = report?.recommendations?.filter(r => activeTab === 'all' || r.category?.toLowerCase() === activeTab || r.priority?.toLowerCase() === activeTab) || [];
+  const [flippedCards, setFlippedCards] = useState({});
+  const toggleFlip = (id) => setFlippedCards(prev => ({ ...prev, [id]: !prev[id] }));
 
 
   return (
@@ -437,7 +439,7 @@ export default function App() {
           transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1); 
           transform-style: preserve-3d; 
         }
-        .flip-card:hover .flip-card-inner { transform: rotateY(180deg); }
+        .flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
         .flip-card-front, .flip-card-back { 
           position: absolute;
           top: 0; left: 0;
@@ -979,19 +981,19 @@ export default function App() {
               {viewMode === 'grid' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {filteredRecommendations?.map((rec, idx) => (
-                    <div key={rec.id} className="flip-card animate-in fade-in zoom-in-95 fill-mode-both" style={{ animationDelay: `${idx * 100}ms` }}>
+                    <div key={rec.id} className={`flip-card animate-in fade-in zoom-in-95 fill-mode-both ${flippedCards[rec.id] ? 'flipped' : ''}`} style={{ animationDelay: `${idx * 100}ms` }}>
                       <div className="flip-card-inner">
 
                         {/* FRONT OF CARD */}
-                        <div className="flip-card-front bg-[#1A1D24] border border-[#242830] rounded-3xl p-8 flex flex-col justify-between shadow-2xl cursor-pointer hover:border-[#F25430] transition-colors relative overflow-hidden group">
+                        <div onClick={() => toggleFlip(rec.id)} className="flip-card-front bg-[#1A1D24] border border-[#242830] rounded-3xl p-8 flex flex-col justify-between shadow-2xl cursor-pointer hover:border-[#F25430] transition-colors relative overflow-hidden group">
 
                           <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#F25430]/10 to-transparent rounded-bl-full pointer-events-none group-hover:from-[#F25430]/20 transition-all duration-500"></div>
 
                           <div className="flex justify-between items-start mb-6 z-10">
-                            <div style={{ background: rec.priority === 'high' ? `${BRAND.primary}15` : rec.priority === 'medium' ? `${BRAND.accentWarning}15` : `${BRAND.accentSuccess}15`, color: rec.priority === 'high' ? BRAND.primary : rec.priority === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess }} className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-inner">
+                            <div style={{ background: rec.priority?.toLowerCase() === 'high' ? `${BRAND.primary}15` : rec.priority?.toLowerCase() === 'medium' ? `${BRAND.accentWarning}15` : `${BRAND.accentSuccess}15`, color: rec.priority?.toLowerCase() === 'high' ? BRAND.primary : rec.priority?.toLowerCase() === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess }} className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-inner">
                               {getIconForCategory(rec.category, 24)}
                             </div>
-                            <span style={{ color: rec.priority === 'high' ? BRAND.primary : rec.priority === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess, border: `1px solid ${rec.priority === 'high' ? BRAND.primary : rec.priority === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess}40` }} className="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest bg-[#0B0C10]">
+                            <span style={{ color: rec.priority?.toLowerCase() === 'high' ? BRAND.primary : rec.priority?.toLowerCase() === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess, border: `1px solid ${rec.priority?.toLowerCase() === 'high' ? BRAND.primary : rec.priority?.toLowerCase() === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess}40` }} className="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest bg-[#0B0C10]">
                               {rec.priority} Priority
                             </span>
                           </div>
@@ -1005,9 +1007,9 @@ export default function App() {
                             <div>
                               <div className="text-[11px] text-[#6B7280] font-bold uppercase tracking-widest mb-2">Projected Impact</div>
                               <div className="flex gap-1.5">
-                                <div className={`h-2.5 w-6 rounded-sm ${rec.priority === 'low' || rec.priority === 'medium' || rec.priority === 'high' ? 'bg-[#4ADE80] shadow-[0_0_10px_rgba(74,222,128,0.4)]' : 'bg-[#242830]'}`}></div>
-                                <div className={`h-2.5 w-6 rounded-sm ${rec.priority === 'medium' || rec.priority === 'high' ? 'bg-[#FBBF24] shadow-[0_0_10px_rgba(251,191,36,0.4)]' : 'bg-[#242830]'}`}></div>
-                                <div className={`h-2.5 w-6 rounded-sm ${rec.priority === 'high' ? 'bg-[#F25430] shadow-[0_0_10px_rgba(242,84,48,0.4)]' : 'bg-[#242830]'}`}></div>
+                                <div className={`h-2.5 w-6 rounded-sm ${rec.priority?.toLowerCase() === 'low' || rec.priority?.toLowerCase() === 'medium' || rec.priority?.toLowerCase() === 'high' ? 'bg-[#4ADE80] shadow-[0_0_10px_rgba(74,222,128,0.4)]' : 'bg-[#242830]'}`}></div>
+                                <div className={`h-2.5 w-6 rounded-sm ${rec.priority?.toLowerCase() === 'medium' || rec.priority?.toLowerCase() === 'high' ? 'bg-[#FBBF24] shadow-[0_0_10px_rgba(251,191,36,0.4)]' : 'bg-[#242830]'}`}></div>
+                                <div className={`h-2.5 w-6 rounded-sm ${rec.priority?.toLowerCase() === 'high' ? 'bg-[#F25430] shadow-[0_0_10px_rgba(242,84,48,0.4)]' : 'bg-[#242830]'}`}></div>
                               </div>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-[#242830] flex items-center justify-center text-white group-hover:bg-[#F25430] transition-colors"><ChevronRight size={18} /></div>
@@ -1029,7 +1031,7 @@ export default function App() {
                           <div className="mt-auto shrink-0 pb-2 space-y-3">
                             <div className="flex gap-3">
                               <button
-                                onClick={() => handleGenerateCodePatch(rec)}
+                                onClick={(e) => { e.stopPropagation(); handleGenerateCodePatch(rec); }}
                                 disabled={codePatches[rec.id]?.loading}
                                 className="flex-1 py-3 rounded-xl font-bold bg-[#F25430] hover:bg-[#D94A2A] text-white transition-all flex items-center justify-center gap-2 text-[13px] disabled:opacity-50 active:scale-95 shadow-lg"
                               >
@@ -1037,7 +1039,7 @@ export default function App() {
                                 {codePatches[rec.id]?.loading ? 'Building...' : 'Code ✨'}
                               </button>
                               <button
-                                onClick={() => handleGenerateABTests(rec)}
+                                onClick={(e) => { e.stopPropagation(); handleGenerateABTests(rec); }}
                                 disabled={abTests[rec.id]?.loading}
                                 className="flex-1 py-3 rounded-xl font-bold bg-[#242830] hover:bg-[#4B5563] text-white transition-all flex items-center justify-center gap-2 text-[13px] disabled:opacity-50 active:scale-95 shadow-lg border border-[#4B5563]"
                               >
@@ -1094,7 +1096,7 @@ export default function App() {
                         {/* Meta */}
                         <div className="flex gap-6 md:w-1/4 shrink-0">
                           <div
-                            style={{ background: rec.priority === 'high' ? `${BRAND.primary}15` : rec.priority === 'medium' ? `${BRAND.accentWarning}15` : `${BRAND.accentSuccess}15`, color: rec.priority === 'high' ? BRAND.primary : rec.priority === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess }}
+                            style={{ background: rec.priority?.toLowerCase() === 'high' ? `${BRAND.primary}15` : rec.priority?.toLowerCase() === 'medium' ? `${BRAND.accentWarning}15` : `${BRAND.accentSuccess}15`, color: rec.priority?.toLowerCase() === 'high' ? BRAND.primary : rec.priority?.toLowerCase() === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess }}
                             className="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 shadow-inner"
                           >
                             {getIconForCategory(rec.category, 28)}
@@ -1104,7 +1106,7 @@ export default function App() {
                               {rec.category?.replace('-', ' ') || 'Optimization'}
                             </div>
                             <div className="flex items-center mt-3">
-                              <span style={{ color: rec.priority === 'high' ? BRAND.primary : rec.priority === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)" }} className="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest">
+                              <span style={{ color: rec.priority?.toLowerCase() === 'high' ? BRAND.primary : rec.priority?.toLowerCase() === 'medium' ? BRAND.accentWarning : BRAND.accentSuccess, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)" }} className="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest">
                                 {rec.priority || 'Medium'} Priority
                               </span>
                             </div>
@@ -1234,7 +1236,7 @@ export default function App() {
               </div>
 
               <div style={{ background: BRAND.bgSurface, border: `1px solid ${BRAND.bgSurfaceHighlight}`, borderRadius: "32px", overflow: "hidden", boxShadow: "0 30px 80px rgba(0,0,0,0.6)" }} className="flex flex-col h-[600px] relative z-10">
-                <div className="flex-1 overflow-y-auto p-8 space-y-8 scroll-smooth bg-[#0B0C10]/60 custom-scrollbar">
+                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-8 space-y-8 scroll-smooth bg-[#0B0C10]/60 custom-scrollbar">
                   {chatHistory.map((msg, idx) => (
                     <div key={idx} className={`flex gap-5 ${msg.role === 'user' ? 'flex-row-reverse' : 'animate-in fade-in slide-in-from-left-4 duration-500'}`}>
                       <div style={{ background: msg.role === 'user' ? BRAND.bgSurfaceHighlight : BRAND.primary, color: "#fff" }} className="w-14 h-14 rounded-[1.25rem] flex items-center justify-center shrink-0 shadow-lg">
