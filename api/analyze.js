@@ -62,11 +62,16 @@ const fetchWithRetry = async (url, options, retries = 3) => {
 };
 
 const sanitizeHtml = (rawHtml) => {
+  if (!rawHtml) return "";
   return rawHtml
+    .replace(/<!--[\s\S]*?-->/g, '') // Remove comments
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
     .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '[ICON]')
-    .substring(0, 30000); // Increased limit as we are server-side
+    .replace(/<link\b[^>]*\/?>/gi, '') // Remove links
+    .replace(/\s+/g, ' ') // Collapse whitespace
+    .trim()
+    .substring(0, 40000); // 40k chars is plenty for structure
 };
 
 export default async function handler(req, res) {
@@ -106,45 +111,54 @@ export default async function handler(req, res) {
       competitorsHtmlStr = (await Promise.all(compPromises)).join('\n');
     }
 
-    // 3. PageSpeed & Screenshot
-    console.log(`[PAGESPEED] Fetching metrics...`);
-    const psKey = customPageSpeedKey || apiKey;
-    const psUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance${psKey ? `&key=${psKey}` : ''}`;
-    
-    let pageSpeedData = { scoreText: "Unavailable", screenshot: null, mimeType: "image/jpeg" };
-    try {
-      const psRes = await fetch(psUrl);
-      if (psRes.ok) {
-        const psData = await psRes.json();
-        const score = psData.lighthouseResult?.categories?.performance?.score * 100;
-        pageSpeedData.scoreText = score ? `Score: ${score}/100` : "Unavailable";
-        const screenshotData = psData.lighthouseResult?.audits?.['final-screenshot']?.details?.data;
-        if (screenshotData) {
-            // Detect mime type
-            const match = screenshotData.match(/^data:([^;]+);base64,/);
-            if (match) pageSpeedData.mimeType = match[1];
-            pageSpeedData.screenshot = screenshotData.replace(/^data:image\/\w+;base64,/, "");
-        }
-        console.log(`[PAGESPEED] Success. Score: ${score || 'N/A'}`);
-      } else {
-        console.warn(`[PAGESPEED] API returned status ${psRes.status}`);
-      }
-    } catch (err) {
-      console.error(`[PAGESPEED] Failed: ${err.message}`);
-    }
+    // 3. PageSpeed & Screenshot (Passed from Frontend to avoid Vercel 10s timeout)
+    const pageSpeedData = req.body.pageSpeedData || { scoreText: "Unavailable", screenshot: null, mimeType: "image/jpeg" };
+    console.log(`[DATA] Received PageSpeed data: ${pageSpeedData.scoreText}`);
 
     // 4. Gemini Synthesis
-    console.log(`[GEMINI] Calling AI model...`);
+    console.log(`[GEMINI] Preparing multi-modal payload...`);
     const model = "gemini-2.5-flash";
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     
-    let promptText = `Act as an elite CRO analyst. Audit: ${url}.\n\n[HTML]:\n${mainHtml}\n\n[PAGESPEED]:\n${pageSpeedData.scoreText}\n`;
-    if (competitorsHtmlStr) promptText += `\n[COMPETITORS]:\n${competitorsHtmlStr}\n`;
-    if (context) promptText += `\n[USER GOALS]:\n${context}\n`;
-    promptText += `\nOutput strictly valid JSON matching the schema.`;
+    let promptText = `Act as an Elite Conversion Rate Optimization (CRO) Lead at a world-class digital agency. 
+Your mission is to perform a deep-dive audit of the following website: ${url}.
+
+[DATA SOURCES]
+1. LIVE HTML STRUCTURE:
+${mainHtml}
+
+2. PERFORMANCE METRICS (PageSpeed Insights):
+${pageSpeedData.scoreText}
+
+[AUDIT GUIDELINES]
+- Analyze the Visual Hierarchy: How is the "Above the Fold" content structured?
+- Evaluate the Value Proposition: Is it clear what the site offers within 3 seconds?
+- Trust & Authority: Are there testimonials, logos, or security badges?
+- Friction Points: Where might a user get confused or leave?
+- Comparison: If competitor data is provided, identify 2-3 specific "Gaps" where they are outperforming this site.
+
+[DETAILED OUTPUT INSTRUCTIONS]
+- OVERALL_SCORE: Be critical. 90+ is rare. 
+- SUMMARY: Provide a 3-4 sentence high-level executive summary of current performance.
+- STRENGTHS: List 3-5 specific technical or design elements that ARE working.
+- QUICK_WINS: List absolute "no-brainer" fixes that take < 1 hour to implement.
+- RECOMMENDATIONS: Provide 5-8 depth-focused recommendations. For each, specify:
+    - category: (UX, Design, Performance, or Copy)
+    - issue: What exactly is broken?
+    - recommendation: How exactly to fix it?
+    - implementation: Give a brief technical hint (e.g., "Change the z-index" or "Add a sticky header").
+
+[COMPETITORS]:
+${competitorsHtmlStr || "No competitor data provided."}
+
+[USER CONTEXT]:
+${context || "No specific business goals provided."}
+
+FINAL RULE: Return ONLY a valid JSON object matching the requested schema. No conversational filler.`;
 
     const parts = [{ text: promptText }];
     if (pageSpeedData.screenshot) {
+      console.log(`[GEMINI] Attaching screenshot (${(pageSpeedData.screenshot.length / 1024).toFixed(2)} KB)...`);
       parts.push({
         inlineData: {
           mimeType: pageSpeedData.mimeType,
@@ -153,26 +167,39 @@ export default async function handler(req, res) {
       });
     }
 
-    const geminiPayload = {
-      contents: [{ parts }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: { type: "OBJECT", properties: REPORT_SCHEMA_PROPERTIES },
-        temperature: 0.1
-      }
-    };
-
+    console.log(`[GEMINI] Payload ready. Prompt length: ${promptText.length} chars.`);
+    console.log(`[GEMINI] Sending request to Google...`);
+    
+    const startTime = Date.now();
     const geminiResult = await fetchWithRetry(geminiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiPayload)
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: { type: "OBJECT", properties: REPORT_SCHEMA_PROPERTIES },
+          temperature: 0.1
+        }
+      })
     });
 
-    const reportText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!reportText) throw new Error("Empty response from AI");
+    console.log(`[GEMINI] Response received in ${Date.now() - startTime}ms`);
 
-    const report = JSON.parse(reportText);
-    console.log(`[SUCCESS] Report generated for ${url}`);
+    const reportText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!reportText) {
+      console.error("[GEMINI] Fatal: No text in candidates.");
+      throw new Error("Empty response from AI engine.");
+    }
+
+    let report;
+    try {
+      report = JSON.parse(reportText);
+      console.log(`[SUCCESS] Analysis complete. Generated ${report.recommendations?.length || 0} recommendations.`);
+    } catch (parseErr) {
+      console.error("[GEMINI] Failed to parse JSON response:", reportText.substring(0, 500));
+      throw new Error("AI returned invalid data format.");
+    }
     
     return res.status(200).json(report);
 

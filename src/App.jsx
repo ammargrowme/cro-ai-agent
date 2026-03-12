@@ -47,8 +47,26 @@ import {
   Key
 } from "lucide-react";
 
-// Backend routes now handle all AI and data fetching.
+// Backend routes now handle AI logic.
 // VITE_GEMINI_API_KEY is now only used on the server (Vercel).
+
+const fetchLivePageSpeedAndScreenshot = async (url, customKey = "") => {
+  try {
+    const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance${customKey ? `&key=${customKey}` : ''}`;
+    const response = await fetch(apiUrl);
+    if (!response.ok) return { scoreText: "Unavailable", screenshot: null };
+    const data = await response.json();
+    const score = data.lighthouseResult?.categories?.performance?.score * 100;
+    const screenshotData = data.lighthouseResult?.audits?.['final-screenshot']?.details?.data;
+    return {
+      scoreText: score ? `Score: ${score}/100` : "Unavailable",
+      screenshot: screenshotData ? screenshotData.replace(/^data:image\/\w+;base64,/, "") : null,
+      mimeType: "image/jpeg"
+    };
+  } catch (e) {
+    return { scoreText: "Unavailable", screenshot: null };
+  }
+};
 
 // --- BRANDING CONSTANTS ---
 const BRAND = {
@@ -252,21 +270,20 @@ export default function App() {
     setChatHistory([{ role: "model", parts: [{ text: "Hi! I'm your CRO AI Assistant. I've just completed the audit above. What specific areas would you like to discuss or dive deeper into?" }] }]);
 
     try {
-      // Step-by-step UI progress (simulated for better UX as the backend does all the work now)
       setCurrentStep(0);
       const competitors = competitorsInput.split(',').map(s => s.trim()).filter(s => s.length > 0).slice(0, 2);
       
+      // Fetch PageSpeed on frontend to avoid 10s Vercel timeout
+      setCurrentStep(1);
+      const pageSpeedData = await fetchLivePageSpeedAndScreenshot(formattedUrl, customPageSpeedKey.trim());
+      
+      setCurrentStep(3);
       const payload = {
         url: formattedUrl,
         context: additionalContext,
         competitors: competitors.map(c => c.startsWith('http') ? c : `https://${c}`),
-        customPageSpeedKey: customPageSpeedKey.trim()
+        pageSpeedData // Send pre-fetched data to backend
       };
-
-      // Interval to update current step based on typical timing
-      const stepInterval = setInterval(() => {
-        setCurrentStep(prev => (prev < 3 ? prev + 1 : prev));
-      }, 4000);
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -274,7 +291,6 @@ export default function App() {
         body: JSON.stringify(payload)
       });
 
-      clearInterval(stepInterval);
       setCurrentStep(4);
 
       if (!response.ok) {
