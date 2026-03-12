@@ -390,7 +390,7 @@ export default function App() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `GrowAgent_${new URL(url).hostname}.md`; a.click();
   };
 
-  const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); setLogs([]); };
+  const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); };
   const filteredRecommendations = report?.recommendations?.filter(r => activeTab === 'all' || r.category === activeTab || r.priority === activeTab) || [];
 
 
@@ -521,24 +521,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Display persistent logs if an error dumped us back to idle */}
-            {appError && logs.length > 0 && (
-              <div className="mb-10 w-full max-w-3xl bg-[#0B0C10] border border-[#242830] rounded-xl overflow-hidden shadow-inner text-left animate-in fade-in">
-                <div className="bg-[#1A1D24] px-4 py-2 border-b border-[#242830] flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#F87171] uppercase tracking-widest flex items-center gap-2">
-                    <Terminal size={14} /> Error Trace Logs
-                  </span>
-                </div>
-                <div className="p-4 max-h-48 overflow-y-auto custom-scrollbar font-mono text-[11px] space-y-2">
-                  {logs.map(log => (
-                    <div key={log.id} className={`flex gap-3 leading-relaxed ${log.type === 'error' ? 'text-[#F87171]' : log.type === 'success' ? 'text-[#4ADE80]' : log.type === 'warn' ? 'text-[#FBBF24]' : 'text-[#D1D5DB]'}`}>
-                      <span className="text-[#6B7280] shrink-0">[{log.time}]</span>
-                      <span className="break-words">{log.msg}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <form onSubmit={handleAnalyze} className="w-full max-w-3xl relative space-y-4">
               <div className="flex gap-3 items-center">
