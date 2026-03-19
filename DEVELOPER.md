@@ -137,7 +137,7 @@ If you are an AI assistant working on this codebase:
 4. **Animations**: CSS keyframes only. No Framer Motion.
 5. **Node Compatibility**: Pinned to Vite 5 for Node 18 support.
 6. **Test builds**: Always run `npx vite build` before committing.
-7. **Learning system**: Server-side (Upstash Redis) + localStorage fallback. Requires `KV_REST_API_URL` and `KV_REST_API_TOKEN` env vars.
+7. **Learning system**: Server-side (Vercel Redis) + localStorage fallback. Requires `REDIS_URL` env var (auto-injected by Vercel).
 
 ## Future Integrations
 - **WebSockets**: Real-time streaming for report generation progress.

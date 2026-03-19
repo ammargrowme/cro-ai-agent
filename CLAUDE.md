@@ -52,7 +52,7 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - All users contribute to a shared knowledge base — AI gets smarter for everyone
 - Merged learning context: local + server learnings deduplicated and injected into AI prompts
 - Graceful degradation: if Redis is unavailable, app falls back to localStorage
-- Added `@upstash/redis` dependency
+- Added `redis` (node-redis) dependency for Vercel Redis
 
 ### v1.3.0 (March 18, 2026) — Performance + Competitor Analysis + Security
 - Lazy-loaded html2canvas + jsPDF (~560KB off initial bundle)
@@ -103,10 +103,10 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - `api/generateABTests.js` — Generates A/B test copy variations
 
 ### Learning System (Server-Side + Local Fallback)
-- **Server**: Upstash Redis via `api/learnings.js` — shared knowledge base across ALL users
+- **Server**: Vercel Redis via `api/learnings.js` — shared knowledge base across ALL users
   - `global:learnings` Redis list (max 100 entries) — condensed audit summaries
   - `global:insights` Redis list (max 200 entries) — chat-extracted CRO insights
-  - Env vars: `KV_REST_API_URL`, `KV_REST_API_TOKEN` (auto-injected by Vercel KV integration)
+  - Env var: `REDIS_URL` (auto-injected when Redis store is linked in Vercel dashboard)
 - **Local fallback**: localStorage keys `growagent_learnings` (max 20) and `growagent_insights` (max 50)
 - On app load, server learnings are fetched and merged with local data (deduplicated by URL+timestamp)
 - After each audit, data is saved to BOTH server and localStorage
@@ -261,7 +261,7 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 5. **API keys must stay server-side** — never expose in frontend code
 6. **Keep App.jsx as a single file** — do not split into components (project convention)
 7. **Test builds with `npx vite build`** before committing
-8. **The learning system is server-side (Upstash Redis) + local fallback** — requires `KV_REST_API_URL` and `KV_REST_API_TOKEN` env vars
+8. **The learning system is server-side (Vercel Redis) + local fallback** — requires `REDIS_URL` env var (auto-injected by Vercel)
 9. **Always read TODO.md** before starting new work — it has the prioritized plan
 10. **Auto-deploy is on** — every push to `main` goes live at https://cro-ai-agent.vercel.app/
 11. **The CRO checklist source doc** is at Google Doc ID `1kRqHJ7vshj6-55S7cd9tq-M-xyf4LiCCuBikeBB3pS0` — if the checklist needs updating, fetch this doc

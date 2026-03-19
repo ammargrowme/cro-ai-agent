@@ -11,9 +11,9 @@ All notable changes to the GROWAGENT project will be documented in this file.
 - **Global Learning Count**: Header badge now shows total learnings from all users (server) plus local history.
 
 ### Changed
-- **Learning System Architecture**: Moved from client-only (localStorage) to server-first (Upstash Redis) + local fallback. localStorage keys renamed from `growagent_learnings` to `growagent_learnings` (same key, backward compatible).
-- **Dependencies**: Added `@upstash/redis` for server-side Redis persistence. Removed deprecated `@vercel/kv`.
-- **`.env.example`**: Added `KV_REST_API_URL` and `KV_REST_API_TOKEN` environment variable documentation.
+- **Learning System Architecture**: Moved from client-only (localStorage) to server-first (Vercel Redis) + local fallback. localStorage keys unchanged (backward compatible).
+- **Dependencies**: Added `redis` (node-redis) for server-side Redis persistence.
+- **`.env.example`**: Added `REDIS_URL` environment variable documentation.
 
 ## [1.3.0] - 2026-03-18
 ### Added

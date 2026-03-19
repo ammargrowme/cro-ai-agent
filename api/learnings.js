@@ -1,13 +1,14 @@
-import { Redis } from '@upstash/redis';
+import { createClient } from 'redis';
 
 // ─── REDIS CONNECTION ──────────────────────────────────────
-// Vercel KV (now Upstash Redis) auto-injects these env vars when linked:
-//   KV_REST_API_URL, KV_REST_API_TOKEN
-// Falls back to UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "",
-  token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || ""
-});
+// Vercel Redis auto-injects REDIS_URL env var when the store is linked.
+// Connection is created per-request (serverless) with a short timeout.
+const getRedis = async () => {
+  const client = createClient({ url: process.env.REDIS_URL });
+  client.on('error', (err) => console.error('[REDIS]', err.message));
+  await client.connect();
+  return client;
+};
 
 const LEARNINGS_KEY = 'global:learnings';
 const INSIGHTS_KEY = 'global:insights';
@@ -30,45 +31,52 @@ const validateInsightData = (data) => {
 
 // ─── HANDLER ──────────────────────────────────────────────
 export default async function handler(req, res) {
-  // ── GET: Return global learnings + insights for AI prompt injection ──
-  if (req.method === 'GET') {
-    try {
-      // lrange returns parsed JSON automatically with @upstash/redis
-      const learnings = await redis.lrange(LEARNINGS_KEY, -20, -1) || [];
-      const insights = await redis.lrange(INSIGHTS_KEY, -30, -1) || [];
-
-      return res.status(200).json({
-        learnings,
-        insights,
-        totalLearnings: await redis.llen(LEARNINGS_KEY) || 0,
-        totalInsights: await redis.llen(INSIGHTS_KEY) || 0
-      });
-    } catch (err) {
-      console.error("[LEARNINGS GET ERROR]", err.message);
-      // Graceful degradation — return empty so the app still works
+  let redis;
+  try {
+    redis = await getRedis();
+  } catch (err) {
+    console.error("[LEARNINGS] Redis connection failed:", err.message);
+    // Graceful degradation — return empty data so the app still works
+    if (req.method === 'GET') {
       return res.status(200).json({ learnings: [], insights: [], totalLearnings: 0, totalInsights: 0 });
     }
+    return res.status(500).json({ error: 'Database unavailable' });
   }
 
-  // ── POST: Save a new learning entry ──
-  if (req.method === 'POST') {
-    const { type, data } = req.body;
+  try {
+    // ── GET: Return global learnings + insights for AI prompt injection ──
+    if (req.method === 'GET') {
+      // node-redis lRange returns strings — we need to JSON.parse each
+      const rawLearnings = await redis.lRange(LEARNINGS_KEY, -20, -1) || [];
+      const rawInsights = await redis.lRange(INSIGHTS_KEY, -30, -1) || [];
 
-    if (!type || !['audit', 'insight'].includes(type)) {
-      return res.status(400).json({ error: 'Invalid type. Must be "audit" or "insight".' });
+      const learnings = rawLearnings.map(s => { try { return JSON.parse(s); } catch { return null; } }).filter(Boolean);
+      const insights = rawInsights.map(s => { try { return JSON.parse(s); } catch { return null; } }).filter(Boolean);
+
+      const totalLearnings = await redis.lLen(LEARNINGS_KEY) || 0;
+      const totalInsights = await redis.lLen(INSIGHTS_KEY) || 0;
+
+      return res.status(200).json({ learnings, insights, totalLearnings, totalInsights });
     }
 
-    if (!data || typeof data !== 'object') {
-      return res.status(400).json({ error: 'Data object is required.' });
-    }
+    // ── POST: Save a new learning entry ──
+    if (req.method === 'POST') {
+      const { type, data } = req.body;
 
-    try {
+      if (!type || !['audit', 'insight'].includes(type)) {
+        return res.status(400).json({ error: 'Invalid type. Must be "audit" or "insight".' });
+      }
+
+      if (!data || typeof data !== 'object') {
+        return res.status(400).json({ error: 'Data object is required.' });
+      }
+
       if (type === 'audit') {
         if (!validateAuditData(data)) {
           return res.status(400).json({ error: 'Invalid audit data. Required: url (string), score (number 0-100).' });
         }
 
-        const entry = {
+        const entry = JSON.stringify({
           url: data.url,
           score: data.score,
           timestamp: data.timestamp || new Date().toISOString(),
@@ -78,13 +86,13 @@ export default async function handler(req, res) {
           checklistStrengths: (data.checklistStrengths || []).slice(0, 10),
           allChecklistScores: data.allChecklistScores || {},
           criticalFlags: (data.criticalFlags || []).slice(0, 5)
-        };
+        });
 
-        // RPUSH + LTRIM is atomic enough for concurrent writes
-        await redis.rpush(LEARNINGS_KEY, entry);
-        await redis.ltrim(LEARNINGS_KEY, -MAX_LEARNINGS, -1);
+        // RPUSH + LTRIM for atomic append-and-cap
+        await redis.rPush(LEARNINGS_KEY, entry);
+        await redis.lTrim(LEARNINGS_KEY, -MAX_LEARNINGS, -1);
 
-        const total = await redis.llen(LEARNINGS_KEY);
+        const total = await redis.lLen(LEARNINGS_KEY);
         return res.status(200).json({ ok: true, totalLearnings: total });
       }
 
@@ -93,23 +101,29 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Invalid insight data. Required: text (string, max 500 chars).' });
         }
 
-        const entry = {
+        const entry = JSON.stringify({
           text: data.text.substring(0, 500),
           timestamp: new Date().toISOString(),
           sourceUrl: (data.sourceUrl || "").substring(0, 500)
-        };
+        });
 
-        await redis.rpush(INSIGHTS_KEY, entry);
-        await redis.ltrim(INSIGHTS_KEY, -MAX_INSIGHTS, -1);
+        await redis.rPush(INSIGHTS_KEY, entry);
+        await redis.lTrim(INSIGHTS_KEY, -MAX_INSIGHTS, -1);
 
-        const total = await redis.llen(INSIGHTS_KEY);
+        const total = await redis.lLen(INSIGHTS_KEY);
         return res.status(200).json({ ok: true, totalInsights: total });
       }
-    } catch (err) {
-      console.error("[LEARNINGS POST ERROR]", err.message);
-      return res.status(500).json({ error: 'Failed to save learning data.' });
     }
-  }
 
-  return res.status(405).json({ error: 'Method Not Allowed' });
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  } catch (err) {
+    console.error("[LEARNINGS ERROR]", err.message);
+    if (req.method === 'GET') {
+      return res.status(200).json({ learnings: [], insights: [], totalLearnings: 0, totalInsights: 0 });
+    }
+    return res.status(500).json({ error: 'Failed to save learning data.' });
+  } finally {
+    // Always disconnect in serverless to avoid hanging connections
+    try { await redis.disconnect(); } catch {}
+  }
 }
