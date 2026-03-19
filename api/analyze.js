@@ -209,7 +209,7 @@ const RECOMMENDATIONS_SCHEMA = {
   properties: {
     recommendations: {
       type: "array",
-      description: "Exactly 6 high-impact CRO recommendations based on the checklist.",
+      description: "High-impact CRO recommendations based on the checklist. Include as many as are genuinely valuable (typically 3-10). Only include recommendations that address REAL issues found — never pad with generic advice.",
       items: {
         type: "object",
         properties: {
@@ -402,18 +402,19 @@ ${mainHtml}`;
     })();
 
     const recsPromise = (async () => {
-      const prompt = `You are an Elite CRO Director. Based on your analysis of this website, provide exactly 6 actionable CRO recommendations.
+      const prompt = `You are an Elite CRO Director. Based on your analysis of this website, provide actionable CRO recommendations.
 
 You MUST base your recommendations on this professional CRO checklist:
 ${CRO_CHECKLIST}
 
 CRITICAL RULES:
-- Exactly 6 recommendations. No more, no less.
+- Include ONLY recommendations that address REAL, specific issues found on THIS site. Do NOT pad with generic advice.
+- If the site has 3 real issues, give 3 recommendations. If it has 10, give 10. Typical range: 3-10 recommendations.
 - Each recommendation MUST reference which checklist item(s) it addresses in the "checklist_ref" field.
 - Each field must be CONCISE: issue max 25 words, recommendation max 30 words, implementation max 20 words, expected_impact max 15 words.
 - priority must be "High", "Medium", or "Low".
 - category must be one of: "CTA", "Trust", "UX", "Design", "Performance", "Copy", "Mobile", "SEO", or "Forms".
-- Focus on the HIGHEST-IMPACT checklist failures first.
+- Focus on the HIGHEST-IMPACT checklist failures first. Order by priority (High first).
 ${learningContext}
 
 ${siteContext}

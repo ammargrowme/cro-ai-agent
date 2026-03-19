@@ -26,6 +26,10 @@ All notable changes to the GROWAGENT project will be documented in this file.
 ### Fixed
 - **CRITICAL: Checklist JSON Truncation**: Gemini 2.5 Flash was truncating checklist responses at ~161 chars because `maxOutputTokens: 2048` didn't leave enough room after thinking tokens. Now uses 8192 with thinking budget cap.
 - **Model Upgrade**: Analysis and chat calls upgraded from `gemini-2.5-flash` to `gemini-3-flash-preview` (frontier-class quality at Flash pricing). Code gen and A/B test endpoints remain on `gemini-2.5-flash` for speed.
+- **Chat Raw JSON Display Fix**: Gemini 3 Flash returns thinking parts before JSON output; chat.js now scans all response parts to find the actual JSON instead of blindly taking `parts[0]`. Added truncated JSON salvaging and nested-JSON safety check.
+- **Chat Token Budget**: Increased `maxOutputTokens` from 4096 to 16384 with `thinkingBudget: 4096` to prevent truncation on report updates.
+- **Chat Summary Bloat Fix**: Added explicit rules preventing the AI from dumping scores, metadata, and recommendation lists into the `summary` field. Summary is now capped at 60 words.
+- **Flexible Recommendation Count**: Recommendations are no longer hardcoded to exactly 6. The AI now provides as many as are genuinely valuable (typically 3-10), only including recommendations that address real issues found on the site.
 - **Chat Error UX**: Error messages now show a retry button instead of a dead-end generic message.
 - **Stale Schema Removed**: Removed unused `REPORT_SCHEMA_PROPERTIES` constant from App.jsx (was v1.0.0 schema, never used by backend).
 - **Orphaned `fix.py` Deleted**: Removed leftover development script from project root.

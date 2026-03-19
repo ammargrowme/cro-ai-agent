@@ -112,7 +112,7 @@ Each category is scored 0-100 by the AI, and the top 5 critical failures are fla
 - **CORS proxy** — not currently used (direct fetch in serverless functions)
 - **Vercel timeout** — 300s max for API functions (`vercel.json`)
 - **3 parallel AI calls** — overview + recommendations + checklist scoring happen simultaneously in Phase 2
-- **Recommendations count** — 6 per audit (was 5 before v1.2.0)
+- **Recommendations count** — Flexible (3-10 based on real issues found, was hardcoded to 6 before v1.2.1)
 - **Categories** — CTA, Trust, UX, Design, Performance, Copy, Mobile, SEO, Forms (expanded from 4 in v1.1.0)
 - **Gemini model** — `gemini-3-flash-preview` for analysis + chat (frontier-class quality), `gemini-2.5-flash` for code gen + A/B tests (speed-optimized)
 - **Temperature** — 0.2 for analysis calls, 0.3 for chat
