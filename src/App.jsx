@@ -338,7 +338,7 @@ function AppContent() {
 
   const [report, setReport] = useState(null);
   const [serverLearnings, setServerLearnings] = useState({ learnings: [], insights: [], totalLearnings: 0, totalInsights: 0 });
-  const [learningCount, setLearningCount] = useState(() => getLocalLearnings().length);
+  const [learningCount, setLearningCount] = useState(0);
   const [activeTab, setActiveTab] = useState('all');
   const [codePatches, setCodePatches] = useState({});
   const [abTests, setAbTests] = useState({});
@@ -355,12 +355,11 @@ function AppContent() {
     setSafeLocalStorage("growagent_pagespeed_key", customPageSpeedKey);
   }, [customPageSpeedKey]);
 
-  // Fetch shared server learnings on mount
+  // Fetch shared server learnings on mount — this is the single source of truth
   useEffect(() => {
     fetchServerLearnings().then(data => {
       setServerLearnings(data);
-      // Total = server global count (all users) + local count
-      setLearningCount(data.totalLearnings + getLocalLearnings().length);
+      setLearningCount(data.totalLearnings);
     });
   }, []);
 
@@ -416,7 +415,7 @@ function AppContent() {
 
     try {
       setCurrentStep(0);
-      const competitors = competitorsInput.split(',').map(s => s.trim()).filter(s => s.length > 0).slice(0, 2);
+      const competitors = competitorsInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 2);
       
       const payload = {
         url: formattedUrl,
@@ -452,10 +451,10 @@ function AppContent() {
         // Save to BOTH server (shared) and local (fallback)
         saveLocalLearning(realReport);
         saveServerLearning(realReport);
-        // Refresh server learnings count
+        // Refresh server learnings count (server is the source of truth)
         fetchServerLearnings().then(data => {
           setServerLearnings(data);
-          setLearningCount(data.totalLearnings + getLocalLearnings().length);
+          setLearningCount(data.totalLearnings);
         });
         setCountdown(3);
         setStatus("wrapped_countdown");
