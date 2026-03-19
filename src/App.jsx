@@ -1,7 +1,6 @@
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+// html2canvas and jsPDF are lazy-loaded in export handlers to reduce initial bundle (~560KB savings)
 import {
   Globe,
   Search,
@@ -227,8 +226,58 @@ const LOADING_PHRASES = [
   "Identifying trust signals...", "Cross-referencing competitors...", "Calculating cognitive load..."
 ];
 
+// --- CLIPBOARD HELPER (replaces deprecated execCommand) ---
+const copyToClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fallback for older browsers / non-HTTPS
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { }
+    document.body.removeChild(ta);
+    return true;
+  }
+};
 
-export default function App() {
+// --- ERROR BOUNDARY ---
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error("GROWAGENT Error Boundary:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement('div', {
+        style: { background: '#0B0C10', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', fontFamily: "'Inter', sans-serif", color: '#fff', padding: '2rem' }
+      },
+        React.createElement('div', { style: { fontSize: '64px', marginBottom: '1rem' } }, '\u26A0\uFE0F'),
+        React.createElement('h1', { style: { fontFamily: "'Montserrat', sans-serif", fontSize: '2rem', fontWeight: 900, marginBottom: '1rem' } }, 'Something went wrong'),
+        React.createElement('p', { style: { color: '#9CA3AF', marginBottom: '2rem', textAlign: 'center', maxWidth: '500px' } },
+          'GROWAGENT encountered an unexpected error. Your data is safe — click below to reload.'
+        ),
+        React.createElement('button', {
+          onClick: () => window.location.reload(),
+          style: { background: '#F25430', color: '#fff', border: 'none', padding: '12px 32px', borderRadius: '12px', fontWeight: 800, fontSize: '16px', cursor: 'pointer' }
+        }, 'Reload App')
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function AppContent() {
   const [url, setUrl] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -257,6 +306,7 @@ export default function App() {
   const [activeFactIndex, setActiveFactIndex] = useState(0);
 
   const [report, setReport] = useState(null);
+  const [learningCount, setLearningCount] = useState(() => getLearnings().length);
   const [activeTab, setActiveTab] = useState('all');
   const [codePatches, setCodePatches] = useState({});
   const [abTests, setAbTests] = useState({});
@@ -267,6 +317,7 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatEndRef = useRef(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
     setSafeLocalStorage("growagent_pagespeed_key", customPageSpeedKey);
@@ -278,13 +329,15 @@ export default function App() {
   useEffect(() => { if (chatHistory.length > 0 && chatContainerRef.current) { chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight; } }, [chatHistory]);
 
   useEffect(() => {
-    let phraseInterval, factsInterval;
+    let phraseInterval, factsInterval, elapsedInterval;
     if (status === "analyzing") {
+      setElapsedSeconds(0);
       let i = 0;
       phraseInterval = setInterval(() => { i = (i + 1) % LOADING_PHRASES.length; setLoadingPhrase(LOADING_PHRASES[i]); }, 800);
       factsInterval = setInterval(() => { setActiveFactIndex(prev => (prev + 1) % funFacts.length); }, 4000);
+      elapsedInterval = setInterval(() => { setElapsedSeconds(prev => prev + 1); }, 1000);
     }
-    return () => { clearInterval(phraseInterval); clearInterval(factsInterval); };
+    return () => { clearInterval(phraseInterval); clearInterval(factsInterval); clearInterval(elapsedInterval); };
   }, [status, funFacts.length]);
 
   useEffect(() => {
@@ -357,6 +410,7 @@ export default function App() {
         setReport(realReport);
         // Save to learning system for future audits
         saveLearning(realReport);
+        setLearningCount(getLearnings().length);
         setCountdown(3);
         setStatus("wrapped_countdown");
       } else {
@@ -455,7 +509,16 @@ Your job:
       }
 
       if (responseData.updated_report && JSON.stringify(responseData.updated_report) !== JSON.stringify(report)) {
-        setReport(responseData.updated_report); setReportUpdatedFlash(true);
+        // Merge with existing report to handle partial AI responses
+        const merged = { ...report, ...responseData.updated_report };
+        // Preserve arrays/objects that shouldn't be empty
+        if (!merged.recommendations?.length) merged.recommendations = report.recommendations;
+        if (!merged.strengths?.length) merged.strengths = report.strengths;
+        if (!merged.quick_wins?.length) merged.quick_wins = report.quick_wins;
+        if (!merged.checklist_scores || Object.keys(merged.checklist_scores).length === 0) merged.checklist_scores = report.checklist_scores;
+        if (!merged.checklist_flags?.length) merged.checklist_flags = report.checklist_flags;
+        if (!merged.audit_metadata) merged.audit_metadata = report.audit_metadata;
+        setReport(merged); setReportUpdatedFlash(true);
         trackChatModification();
         setTimeout(() => setReportUpdatedFlash(false), 1500);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -536,15 +599,22 @@ Your job:
     content += `## Prioritized Strategy\n${(report.recommendations || []).map(r => `### [${(r.priority || 'Medium').toUpperCase()}] ${r.category || 'General'}\n- **Issue**: ${r.issue || 'N/A'}\n- **Recommendation**: ${r.recommendation || 'N/A'}\n- **Impact**: ${r.expected_impact || 'N/A'}\n- **Implementation**: ${r.implementation || 'N/A'}\n${r.checklist_ref ? `- **Checklist**: ${r.checklist_ref}\n` : ''}`).join('\n')}`;
     const blob = new Blob([content], { type: 'text/markdown' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `GrowAgent_${new URL(url).hostname}.md`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const reportDashboardRef = useRef(null);
 
   const handleExportPDF = async () => {
     if (!reportDashboardRef.current || !report) return;
     setShowExportMenu(false);
+    setIsExporting(true);
     try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf')
+      ]);
       const element = reportDashboardRef.current;
       const canvas = await html2canvas(element, {
         scale: 2,
@@ -562,7 +632,6 @@ Your job:
       const ratio = pdfWidth / imgWidth;
       const scaledHeight = imgHeight * ratio;
 
-      // Multi-page support
       let yOffset = 0;
       while (yOffset < scaledHeight) {
         if (yOffset > 0) pdf.addPage();
@@ -573,13 +642,18 @@ Your job:
       pdf.save(`GrowAgent_${new URL(url).hostname}_CRO_Report.pdf`);
     } catch (err) {
       console.error("PDF export error:", err);
+      setAppError("PDF export failed. Please try the Print option instead.");
+    } finally {
+      setIsExporting(false);
     }
   };
 
   const handleExportPNG = async () => {
     if (!reportDashboardRef.current || !report) return;
     setShowExportMenu(false);
+    setIsExporting(true);
     try {
+      const { default: html2canvas } = await import('html2canvas');
       const canvas = await html2canvas(reportDashboardRef.current, {
         scale: 2,
         useCORS: true,
@@ -591,8 +665,12 @@ Your job:
       a.href = canvas.toDataURL('image/png');
       a.download = `GrowAgent_${new URL(url).hostname}_CRO_Report.png`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     } catch (err) {
       console.error("PNG export error:", err);
+      setAppError("PNG export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -604,6 +682,7 @@ Your job:
     a.href = URL.createObjectURL(blob);
     a.download = `GrowAgent_${new URL(url).hostname}_CRO_Report.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
   const handleExportCSV = () => {
@@ -619,10 +698,11 @@ Your job:
     a.href = URL.createObjectURL(blob);
     a.download = `GrowAgent_${new URL(url).hostname}_Recommendations.csv`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
   const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); setShowExportMenu(false); };
-  const filteredRecommendations = report?.recommendations?.filter(r => activeTab === 'all' || r.category?.toLowerCase() === activeTab || r.priority?.toLowerCase() === activeTab) || [];
+  const filteredRecommendations = useMemo(() => report?.recommendations?.filter(r => activeTab === 'all' || r.category?.toLowerCase() === activeTab || r.priority?.toLowerCase() === activeTab) || [], [report?.recommendations, activeTab]);
   const [flippedCards, setFlippedCards] = useState({});
   const toggleFlip = (id) => setFlippedCards(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -643,7 +723,7 @@ Your job:
 
   return (
     <div style={{ background: BRAND.bgBase, minHeight: "100vh", color: BRAND.textMain, fontFamily: "'Inter', sans-serif" }} className="relative overflow-hidden">
-      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      {/* Google Fonts loaded via index.html with preconnect for performance */}
 
       {/* Dynamic Backgrounds & Custom CSS */}
       <style>{`
@@ -869,9 +949,9 @@ Your job:
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {getLearnings().length > 0 && (
+          {learningCount > 0 && (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#4ADE80]/10 border border-[#4ADE80]/20 text-[#4ADE80] text-xs font-bold">
-              <Brain size={14} /> {getLearnings().length} past audit{getLearnings().length !== 1 ? 's' : ''} learned
+              <Brain size={14} /> {learningCount} past audit{learningCount !== 1 ? 's' : ''} learned
             </div>
           )}
           {status === "complete" && (
@@ -910,7 +990,7 @@ Your job:
             </p>
 
             {appError && (
-              <div className="mb-8 w-full max-w-3xl bg-[#F87171]/10 border border-[#F87171]/30 p-4 rounded-xl flex items-center gap-3 text-[#F87171] font-medium animate-in fade-in slide-in-from-top-4 shadow-lg">
+              <div role="alert" className="mb-8 w-full max-w-3xl bg-[#F87171]/10 border border-[#F87171]/30 p-4 rounded-xl flex items-center gap-3 text-[#F87171] font-medium animate-in fade-in slide-in-from-top-4 shadow-lg">
                 <AlertCircle size={20} className="shrink-0" />
                 {appError}
               </div>
@@ -930,6 +1010,7 @@ Your job:
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       placeholder="Enter primary domain (e.g., example.com)"
+                      aria-label="Website URL to analyze"
                       style={{ background: "transparent", color: "#fff" }}
                       className="w-full h-full focus:outline-none text-xl font-medium placeholder:text-[#4B5563]"
                     />
@@ -1032,8 +1113,13 @@ Your job:
               <h2 style={{ fontFamily: "'Montserrat', sans-serif", color: "#fff" }} className="text-3xl font-black text-center mb-3 drop-shadow-md">
                 {STEP_HEADERS[Math.min(currentStep, STEP_HEADERS.length - 1)] || "Finalizing Architecture"}
               </h2>
-              <div className="text-center h-6 mb-12 text-sm font-bold uppercase tracking-widest text-[#F25430] animate-pulse">
+              <div className="text-center h-6 mb-4 text-sm font-bold uppercase tracking-widest text-[#F25430] animate-pulse">
                 {loadingPhrase}
+              </div>
+              <div className="text-center mb-12 text-xs text-[#6B7280] font-medium">
+                {elapsedSeconds}s elapsed
+                {elapsedSeconds > 30 && elapsedSeconds <= 60 && <span className="ml-2 text-[#9CA3AF]">— Complex pages take longer. Still working...</span>}
+                {elapsedSeconds > 60 && <span className="ml-2 text-[#FBBF24]">— Almost there, AI is synthesizing your report...</span>}
               </div>
 
               <div className="w-full bg-[#0B0C10] rounded-full h-3 mb-12 overflow-hidden border border-[#242830] shadow-inner relative">
@@ -1536,11 +1622,10 @@ Your job:
                             {codePatches[rec.id]?.code && (
                               <div className="p-4 rounded-xl border border-[#242830] bg-[#0B0C10] relative max-h-[160px] overflow-y-auto custom-scrollbar">
                                 <button
-                                  onClick={() => {
-                                    const textArea = document.createElement("textarea"); textArea.value = codePatches[rec.id].code; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); } catch (err) { } document.body.removeChild(textArea);
-                                  }}
+                                  onClick={() => copyToClipboard(codePatches[rec.id].code)}
                                   className="absolute top-2 right-2 p-1.5 bg-[#242830] rounded hover:bg-[#F25430] text-white transition-colors"
                                   title="Copy Code"
+                                  aria-label="Copy code to clipboard"
                                 ><Code size={14} /></button>
                                 <pre className="text-[#4ADE80] text-[11px] font-mono whitespace-pre-wrap">{codePatches[rec.id].code}</pre>
                               </div>
@@ -1552,7 +1637,7 @@ Your job:
                                 {abTests[rec.id].variations.map((v, i) => (
                                   <div key={i} className="text-[#E5E7EB] text-[12px] bg-[#1A1D24] p-3 rounded-lg border border-[#242830] flex justify-between items-start gap-3">
                                     <span className="leading-relaxed">{v}</span>
-                                    <button onClick={() => { const ta = document.createElement("textarea"); ta.value = v; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) { } document.body.removeChild(ta); }} className="p-1 hover:text-[#F25430] transition-colors shrink-0 mt-0.5" title="Copy Text"><Type size={14} /></button>
+                                    <button onClick={() => copyToClipboard(v)} className="p-1 hover:text-[#F25430] transition-colors shrink-0 mt-0.5" title="Copy Text" aria-label="Copy variation text"><Type size={14} /></button>
                                   </div>
                                 ))}
                               </div>
@@ -1666,10 +1751,9 @@ Your job:
                               <Code size={18} /> Developer Handoff Package
                             </div>
                             <button
-                              onClick={() => {
-                                const textArea = document.createElement("textarea"); textArea.value = codePatches[rec.id].code; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); } catch (err) { } document.body.removeChild(textArea);
-                              }}
+                              onClick={() => copyToClipboard(codePatches[rec.id].code)}
                               className="text-xs px-4 py-2 bg-[#1A1D24] text-[#9CA3AF] hover:text-white rounded-lg font-bold transition-colors border border-[#242830] hover:border-[#F25430]"
+                              aria-label="Copy code to clipboard"
                             >
                               Copy Code
                             </button>
@@ -1690,7 +1774,7 @@ Your job:
                             {abTests[rec.id].variations.map((v, i) => (
                               <div key={i} className="text-[#E5E7EB] text-[14px] bg-[#1A1D24] p-5 rounded-xl border border-[#242830] flex flex-col justify-between gap-4">
                                 <span className="leading-relaxed font-medium">"{v}"</span>
-                                <button onClick={() => { const ta = document.createElement("textarea"); ta.value = v; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) { } document.body.removeChild(ta); }} className="text-[11px] self-start font-bold uppercase tracking-wider text-[#9CA3AF] hover:text-[#F25430] transition-colors flex items-center gap-1">
+                                <button onClick={() => copyToClipboard(v)} className="text-[11px] self-start font-bold uppercase tracking-wider text-[#9CA3AF] hover:text-[#F25430] transition-colors flex items-center gap-1" aria-label="Copy variation text">
                                   <Type size={12} /> Copy Text
                                 </button>
                               </div>
@@ -1733,7 +1817,7 @@ Your job:
               </div>
 
               <div style={{ background: BRAND.bgSurface, border: `1px solid ${BRAND.bgSurfaceHighlight}`, borderRadius: "32px", overflow: "hidden", boxShadow: "0 30px 80px rgba(0,0,0,0.6)" }} className="flex flex-col h-[600px] relative z-10">
-                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-8 space-y-8 scroll-smooth bg-[#0B0C10]/60 custom-scrollbar">
+                <div ref={chatContainerRef} role="log" aria-live="polite" aria-label="Chat conversation" className="flex-1 overflow-y-auto p-8 space-y-8 scroll-smooth bg-[#0B0C10]/60 custom-scrollbar">
                   {chatHistory.map((msg, idx) => (
                     <div key={idx} className={`flex gap-5 ${msg.role === 'user' ? 'flex-row-reverse' : 'animate-in fade-in slide-in-from-left-4 duration-500'}`}>
                       <div style={{ background: msg.role === 'user' ? BRAND.bgSurfaceHighlight : BRAND.primary, color: "#fff" }} className="w-14 h-14 rounded-[1.25rem] flex items-center justify-center shrink-0 shadow-lg">
@@ -1769,6 +1853,7 @@ Your job:
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSubmit(e); } }}
                     placeholder="Provide feedback (e.g. 'Actually, we don't sell to B2C, remove those suggestions')..."
+                    aria-label="Chat message input"
                     style={{ background: "#0B0C10", border: `1px solid ${BRAND.bgSurfaceHighlight}`, color: "#fff", minHeight: "60px", maxHeight: "200px" }}
                     className="w-full px-6 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#F25430] transition-all placeholder:text-[#4B5563] resize-none overflow-y-auto text-base font-medium shadow-inner custom-scrollbar"
                     rows="1"
@@ -1778,6 +1863,7 @@ Your job:
                     disabled={isChatLoading || !chatInput.trim()}
                     style={{ background: isChatLoading || !chatInput.trim() ? BRAND.bgSurfaceHighlight : BRAND.primary, color: isChatLoading || !chatInput.trim() ? "#6B7280" : "#fff" }}
                     className="p-5 rounded-2xl font-bold hover:bg-[#D94A2A] transition-all shrink-0 disabled:cursor-not-allowed shadow-lg active:scale-95 mb-0.5"
+                    aria-label="Send chat message"
                   >
                     <Send size={24} />
                   </button>
@@ -1797,5 +1883,13 @@ Your job:
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #4B5563; }
       `}</style>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 }

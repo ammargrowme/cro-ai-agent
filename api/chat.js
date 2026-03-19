@@ -1,9 +1,20 @@
-const apiKey = process.env.VITE_GEMINI_API_KEY || "";
+const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   const { history, systemInstruction } = req.body;
+
+  // Input validation
+  if (!history || !Array.isArray(history) || history.length === 0) {
+    return res.status(400).json({ error: 'Chat history is required' });
+  }
+  if (history.length > 50) {
+    return res.status(400).json({ error: 'Chat history too long (max 50 messages)' });
+  }
+  if (!systemInstruction || typeof systemInstruction !== 'string') {
+    return res.status(400).json({ error: 'System instruction is required' });
+  }
 
   try {
     const model = "gemini-3-flash-preview";

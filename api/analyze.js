@@ -1,5 +1,5 @@
 
-const apiKey = process.env.VITE_GEMINI_API_KEY || "";
+const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
 
 // ─── CRO CHECKLIST (from GrowMe Basic Website Standards) ──────────
 const CRO_CHECKLIST = `
@@ -258,6 +258,26 @@ const CHECKLIST_SCHEMA = {
   required: ["checklist_scores", "checklist_flags"]
 };
 
+const COMPETITOR_SCHEMA = {
+  type: "object",
+  properties: {
+    overview: { type: "string", description: "2-3 sentence overview of competitive positioning. MAX 60 words." },
+    comparisons: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          competitor: { type: "string", description: "Competitor domain name" },
+          difference: { type: "string", description: "Key CRO difference vs the target site. MAX 30 words." },
+          advantage: { type: "string", description: "Target site's strategic advantage over this competitor. MAX 25 words." }
+        },
+        required: ["competitor", "difference", "advantage"]
+      }
+    }
+  },
+  required: ["overview", "comparisons"]
+};
+
 // ─── MAIN HANDLER ──────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -265,6 +285,13 @@ export default async function handler(req, res) {
 
   const { url, context, competitors, customPageSpeedKey, pastLearnings } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
+
+  // Validate URL format
+  try {
+    new URL(url);
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
 
   const logId = Math.random().toString(36).substring(7);
   const globalStart = Date.now();
@@ -321,8 +348,26 @@ export default async function handler(req, res) {
       return data;
     })();
 
-    const [mainHtml, pageSpeedData] = await Promise.all([scrapePromise, pageSpeedPromise]);
-    console.log(`[${logId}] [PHASE 1 DONE] ${Date.now() - globalStart}ms elapsed`);
+    // Scrape competitors in parallel with main site
+    const competitorPromises = (competitors || []).slice(0, 2).map(async (compUrl) => {
+      try {
+        const t = Date.now();
+        const compRes = await fetch(compUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          signal: AbortSignal.timeout(15000)
+        });
+        const html = sanitizeHtml(await compRes.text());
+        console.log(`[${logId}] [PHASE 1] Competitor scrape OK (${compUrl}): ${html.length} chars in ${Date.now() - t}ms`);
+        return { url: compUrl, html };
+      } catch (err) {
+        console.warn(`[${logId}] [PHASE 1] Competitor scrape FAIL (${compUrl}): ${err.message}`);
+        return { url: compUrl, html: "" };
+      }
+    });
+
+    const [mainHtml, pageSpeedData, ...competitorData] = await Promise.all([scrapePromise, pageSpeedPromise, ...competitorPromises]);
+    const validCompetitors = competitorData.filter(c => c.html.length > 0);
+    console.log(`[${logId}] [PHASE 1 DONE] ${Date.now() - globalStart}ms elapsed | Competitors scraped: ${validCompetitors.length}/${competitorData.length}`);
 
     // ══════════════════════════════════════════════════
     // PHASE 2: Three AI calls IN PARALLEL
@@ -452,16 +497,46 @@ ${mainHtml.substring(0, 12000)}`;
       return result;
     })();
 
+    // 4th AI call: Competitor Analysis (only if competitors were scraped)
+    const competitorPromise = validCompetitors.length > 0 ? (async () => {
+      const competitorContext = validCompetitors.map(c => {
+        const hostname = (() => { try { return new URL(c.url).hostname; } catch { return c.url; } })();
+        return `[COMPETITOR: ${hostname}]\n${c.html.substring(0, 8000)}`;
+      }).join('\n\n');
+
+      const prompt = `You are an Elite CRO Director. Compare this website against its competitors using the CRO checklist framework.
+
+TARGET SITE (${url}):
+${mainHtml.substring(0, 10000)}
+
+COMPETITORS:
+${competitorContext}
+
+For each competitor, identify:
+1. The KEY CRO difference (where the competitor does something better or worse)
+2. The target site's strategic advantage over this competitor
+
+Focus on actionable CRO differences: CTAs, trust signals, content structure, mobile optimization, forms, above-the-fold content.
+Be specific — reference exact elements you observe in the HTML.`;
+
+      const t = Date.now();
+      const result = await callGemini(logId, prompt, imageParts, COMPETITOR_SCHEMA, 4096);
+      console.log(`[${logId}] [PHASE 2] Competitor analysis done in ${Date.now() - t}ms. Comparisons: ${result.comparisons?.length}`);
+      return result;
+    })() : Promise.resolve({ overview: "", comparisons: [] });
+
     // Use Promise.allSettled so one failing call doesn't crash the entire audit
-    const [overviewResult, recsResult, checklistResult] = await Promise.allSettled([overviewPromise, recsPromise, checklistPromise]);
+    const [overviewResult, recsResult, checklistResult, competitorResult] = await Promise.allSettled([overviewPromise, recsPromise, checklistPromise, competitorPromise]);
 
     const overview = overviewResult.status === 'fulfilled' ? overviewResult.value : { overall_score: 0, summary: "Overview generation failed — please retry.", strengths: [], quick_wins: [] };
     const recs = recsResult.status === 'fulfilled' ? recsResult.value : { recommendations: [] };
     const checklist = checklistResult.status === 'fulfilled' ? checklistResult.value : { checklist_scores: {}, checklist_flags: ["Checklist scoring failed — please retry the audit."] };
+    const competitorAnalysis = competitorResult.status === 'fulfilled' ? competitorResult.value : { overview: "", comparisons: [] };
 
     if (overviewResult.status === 'rejected') console.error(`[${logId}] Overview FAILED: ${overviewResult.reason?.message}`);
     if (recsResult.status === 'rejected') console.error(`[${logId}] Recommendations FAILED: ${recsResult.reason?.message}`);
     if (checklistResult.status === 'rejected') console.error(`[${logId}] Checklist FAILED: ${checklistResult.reason?.message}`);
+    if (competitorResult.status === 'rejected') console.error(`[${logId}] Competitor FAILED: ${competitorResult.reason?.message}`);
 
     // ══════════════════════════════════════════════════
     // PHASE 3: Merge & Deliver
@@ -477,7 +552,7 @@ ${mainHtml.substring(0, 12000)}`;
       strengths: overview.strengths || [],
       quick_wins: overview.quick_wins || [],
       recommendations: recs.recommendations || [],
-      competitor_analysis: { overview: "", comparisons: [] },
+      competitor_analysis: competitorAnalysis || { overview: "", comparisons: [] },
       checklist_scores: mergedChecklistScores,
       checklist_flags: checklist.checklist_flags || [],
       audit_metadata: {
