@@ -224,3 +224,53 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 8. **Always read TODO.md** before starting new work — it has the prioritized plan
 9. **Auto-deploy is on** — every push to `main` goes live at https://cro-ai-agent.vercel.app/
 10. **The CRO checklist source doc** is at Google Doc ID `1kRqHJ7vshj6-55S7cd9tq-M-xyf4LiCCuBikeBB3pS0` — if the checklist needs updating, fetch this doc
+
+## MANDATORY: Updating Documentation With Every Change
+
+**This is a hard rule. The user should NEVER have to ask you to update docs — do it automatically with every commit.**
+
+After making ANY code change, you MUST update the following files before committing:
+
+### 1. `CHANGELOG.md`
+- Add entries under the current version's `### Added`, `### Changed`, or `### Fixed` sections
+- If this is a new version bump, create a new `## [x.x.x] - YYYY-MM-DD` header
+- Keep entries concise: one line per change, bold the feature name
+
+### 2. `TODO.md`
+- Move completed items from "NEXT FEATURES" to "COMPLETED" (check them off)
+- If you discovered new bugs, add them to "KNOWN BUGS / ISSUES"
+- If you completed testing items, check them off in "NEEDS TESTING"
+- If the immediate priority changed, update "YOUR FIRST TASK"
+- Update the "Last updated" date at the top
+
+### 3. `CLAUDE.md` (this file)
+- Update "Quick Status" version if bumped
+- Add a new entry to "Session History" if this is a new session/major change
+- Update "What To Do Next" if priorities shifted
+- Update "Known Issues" if bugs were fixed or new ones found
+- Update "Report Schema" or "Chat Response Schema" if schemas changed
+- Update "File Map" if files were added or removed
+
+### 4. `IMPLEMENTATION_RECAP.md`
+- Add a new session section if this is a new conversation/session
+- Document what was built, why, what changed in which files, and deployment status
+- Include verification results (build pass/fail, endpoint tests)
+
+### 5. `DEVELOPER.md`
+- Update if architecture, data flow, storage, or protocols changed
+- Update the "Instructions for AI Support Agents" section if new rules emerged
+
+### 6. `README.md`
+- Update if user-facing features changed (new UI sections, new workflows)
+- Update the features list, checklist table, or roadmap as needed
+
+### Commit message convention
+- Use conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`
+- Always end with `Co-Authored-By: [model name] <noreply@anthropic.com>`
+
+### When to bump versions
+- **Patch** (1.2.x): Bug fixes, print CSS, small UI tweaks
+- **Minor** (1.x.0): New features (competitor analysis, PDF export, multi-page crawl)
+- **Major** (x.0.0): Breaking changes (new auth system, database migration)
+
+**The goal**: Any AI or human picking up this repo at any point in time can read these files and know EXACTLY what the project state is, what was done, what works, what's broken, and what to do next — without needing any conversation history.
