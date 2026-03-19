@@ -2,6 +2,31 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.3.0] - 2026-03-18
+### Added
+- **Competitor Analysis (Live)**: Competitor URLs are now scraped in parallel during Phase 1 and analyzed via a 4th AI call in Phase 2. The `competitor_analysis` field is now fully populated with CRO-focused comparisons.
+- **React Error Boundary**: App-wide error boundary catches rendering crashes and displays a branded recovery screen instead of a white page.
+- **Clipboard API**: Modern `navigator.clipboard.writeText()` replaces deprecated `document.execCommand('copy')` across all copy buttons, with graceful fallback.
+- **Export Loading States**: PDF and PNG exports now show loading indicators and user-visible error messages on failure.
+- **Elapsed Timer**: Loading screen now displays real elapsed time and reassurance messages after 30s and 60s.
+- **Accessibility**: Added `aria-label`, `role="log"`, `role="alert"`, and `aria-live="polite"` to key interactive elements.
+- **Meta Tags & OG Tags**: `index.html` now includes proper title, description, OG tags, and theme-color for SEO and social sharing.
+- **Input Validation**: All 4 API endpoints now validate request bodies (type checks, length limits, URL format).
+
+### Changed
+- **Lazy-loaded Export Libraries**: `html2canvas` (~260KB) and `jsPDF` (~300KB) are now dynamically imported only when the user clicks Export, reducing initial bundle by ~560KB.
+- **Font Loading Optimized**: Google Fonts moved from inline JSX to `index.html` `<head>` with `preconnect` for faster first paint.
+- **Vite Build Optimized**: Added manual chunks for `react`/`react-dom` and `lucide-react` for better long-term caching. Disabled compressed size reporting for faster builds.
+- **Chat Report Merging**: `updated_report` from chat is now merged with the existing report instead of replacing it, preventing data loss from partial AI responses.
+- **Learning Count Cached**: Header learning badge now reads from a React state variable instead of calling `getLearnings()` (which parses localStorage) on every render.
+- **Recommendations Memoized**: `filteredRecommendations` is now wrapped in `useMemo` to avoid recalculation on unrelated state changes.
+- **API Key Env Var**: Renamed from `VITE_GEMINI_API_KEY` to `GEMINI_API_KEY` (with fallback) to prevent accidental client-side exposure via Vite's `VITE_` prefix convention.
+
+### Fixed
+- **Object URL Memory Leaks**: All export handlers now call `URL.revokeObjectURL()` after download to free memory.
+- **generateABTests.js JSON Crash**: Uncaught `JSON.parse` on Gemini response now wrapped in try-catch with salvage logic matching the other endpoints.
+- **generateCode.js Empty Response**: Added validation for empty AI responses instead of silently returning undefined.
+
 ## [1.2.1] - 2026-03-18
 ### Added
 - **Aggregate Pattern Detection**: Learning system now detects recurring checklist weaknesses across all past audits and highlights systemic patterns (e.g., "CTA issues found in 4/5 audits") in AI prompts.

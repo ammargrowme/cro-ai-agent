@@ -4,7 +4,7 @@
 
 ## Quick Status
 
-- **Version**: 1.2.1 (March 18, 2026)
+- **Version**: 1.3.0 (March 18, 2026)
 - **Live URL**: https://cro-ai-agent.vercel.app/
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
@@ -46,6 +46,20 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - Learning badge in header shows count of past audits learned
 - All docs updated (CLAUDE.md, README, CHANGELOG, DEVELOPER.md, TODO.md)
 
+### v1.3.0 (March 18, 2026) — Performance + Competitor Analysis + Security
+- Lazy-loaded html2canvas + jsPDF (~560KB off initial bundle)
+- Competitor analysis fully wired: scrape + 4th AI call + UI population
+- React Error Boundary prevents white-screen crashes
+- Input validation on all 4 API endpoints
+- Modern clipboard API replaces deprecated execCommand
+- Chat updated_report merging handles partial AI responses
+- Elapsed timer + reassurance messages in loading UX
+- Accessibility improvements (aria-labels, roles)
+- Meta tags, OG tags, font preloading in index.html
+- Vite manual chunks for better caching
+- API key renamed to GEMINI_API_KEY (VITE_ prefix is unsafe)
+- Fixed memory leaks, JSON parsing crashes
+
 ### v1.2.1 (March 18, 2026) — Smarter Learning + Chat Improvements
 - Aggregate pattern detection: AI now identifies recurring checklist weaknesses across all past audits
 - Richer audit memory: stores strengths, critical flags, all scores, and chat modification count
@@ -62,8 +76,8 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 
 **See `TODO.md` for the full prioritized action plan.** The top 3 items are:
 
-1. **Test v1.2.1 on production** — Run a real audit at https://cro-ai-agent.vercel.app/ and verify checklist scores, recommendations with `checklist_ref`, chat with `learning_insight` and retry button, learning persistence across multiple audits, and print CSS for checklist panel.
-2. **Wire up competitor analysis** — The UI accepts competitor URLs but `api/analyze.js` never scrapes or analyzes them. The display UI already exists.
+1. **Test v1.3.0 on production** — Run audits at https://cro-ai-agent.vercel.app/ with competitor URLs to verify the new competitor analysis, elapsed timer, export loading states, and error boundary.
+2. **Add `GEMINI_API_KEY` env var to Vercel** — Add the new env var name in Vercel dashboard (Settings > Environment Variables). The code falls back to `VITE_GEMINI_API_KEY` for now.
 3. **Server-side learning persistence** — Move from localStorage-only to Vercel KV or Supabase for cross-device persistence.
 
 ## Architecture
@@ -108,10 +122,10 @@ Each category is scored 0-100 by the AI, and the top 5 critical failures are fla
 
 - **Vite 5** (not 6) — pinned for Node.js 18 compatibility
 - **No external CSS** — use Tailwind or `<style>` blocks in App.jsx
-- **API keys** — `VITE_GEMINI_API_KEY` env var, read server-side only via `process.env`
+- **API keys** — `GEMINI_API_KEY` env var (with `VITE_GEMINI_API_KEY` fallback), read server-side only via `process.env`
 - **CORS proxy** — not currently used (direct fetch in serverless functions)
 - **Vercel timeout** — 300s max for API functions (`vercel.json`)
-- **3 parallel AI calls** — overview + recommendations + checklist scoring happen simultaneously in Phase 2
+- **3-4 parallel AI calls** — overview + recommendations + checklist scoring + competitor analysis (when competitors provided) happen simultaneously in Phase 2
 - **Recommendations count** — Flexible (3-10 based on real issues found, was hardcoded to 6 before v1.2.1)
 - **Categories** — CTA, Trust, UX, Design, Performance, Copy, Mobile, SEO, Forms (expanded from 4 in v1.1.0)
 - **Gemini model** — `gemini-3-flash-preview` for analysis + chat (frontier-class quality), `gemini-2.5-flash` for code gen + A/B tests (speed-optimized)
@@ -192,7 +206,7 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 
 ## What Didn't Work / Known Issues
 
-1. **Competitor analysis is a no-op** — URLs are accepted in the UI and sent to the backend, but `api/analyze.js` never scrapes or analyzes them. The `competitor_analysis` field in the report is always empty.
+1. ~~**Competitor analysis is a no-op**~~ — Fixed in v1.3.0. Competitor URLs are now scraped and analyzed via a 4th AI call.
 2. **Chat `updated_report` can be partial** — Gemini sometimes returns incomplete report objects. The frontend checks JSON equality to avoid breaking state, but the update is silently lost.
 3. **PDF export uses `window.print()`** — Works, 3D layouts are flattened. Checklist panel now has print CSS (v1.2.1).
 4. **localStorage learning cap** — 20 audits / 50 insights. Heavy users could still bloat localStorage on older browsers.

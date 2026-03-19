@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-03-18 (v1.2.1)
+**Last updated**: 2026-03-18 (v1.3.0)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 
@@ -10,23 +10,41 @@
 
 ## YOUR FIRST TASK (Start Here)
 
-**Test v1.2.1 on production.** Open https://cro-ai-agent.vercel.app/ and run through this checklist:
+**Test v1.3.0 on production.** Open https://cro-ai-agent.vercel.app/ and run through this checklist:
 
-1. Enter a URL (e.g., `growme.ca`) and click Analyze
+1. Enter a URL (e.g., `growme.ca`) and click Analyze — verify the elapsed timer shows during analysis
 2. Verify the **CRO Checklist Audit** panel appears with 10 category scores (circular indicators)
 3. Verify **Critical Checklist Failures** shows red flag cards
 4. Verify each recommendation card (flip it) shows a **checklist reference** badge
-5. Open the **AI Chat Terminal** — send a message — verify it responds coherently
-6. Ask the chat to "remove recommendation #1 and replace it with something about mobile" — verify the dashboard updates live
-7. **Test chat retry**: Force an error (e.g., send an extremely long message) — verify the red "Retry" button appears
-8. Run a **2nd audit** on a different URL — verify the header shows "1 past audit learned"
-9. Check the AI's recommendations on the 2nd audit — **they should reference patterns from the 1st audit** and mention recurring weaknesses if similar issues exist
-10. **Test print**: Click PDF button — verify the checklist scores panel renders with colored circles and critical failures show red badges
-11. After chatting, check that the learning badge count increments appropriately
+5. **Test competitor analysis**: Enter a URL with competitors (e.g., `growme.ca` vs `competitor.com`) — verify the Competitive Intelligence panel appears with comparisons
+6. Open the **AI Chat Terminal** — send a message — verify it responds coherently
+7. Ask the chat to "modify recommendation #1" — verify the dashboard updates live (merged, not replaced)
+8. **Test exports**: Click Export > PDF — verify loading indicator appears, then PDF downloads
+9. Run a **2nd audit** on a different URL — verify the header shows "1 past audit learned"
+10. **Test error recovery**: Verify the Error Boundary works (if an error occurs, a recovery screen appears)
 
 Report any failures as bugs in the "KNOWN BUGS" section below, then proceed to building new features.
 
 ---
+
+## COMPLETED (v1.3.0 — March 18, 2026)
+
+- [x] Competitor analysis fully wired (scrape + 4th AI call + UI auto-populates)
+- [x] Lazy-loaded html2canvas + jsPDF (~560KB bundle reduction)
+- [x] React Error Boundary (prevents white-screen crashes)
+- [x] Input validation on all 4 API endpoints
+- [x] Modern clipboard API (replaces deprecated execCommand)
+- [x] Chat updated_report merging (handles partial AI responses)
+- [x] Elapsed timer + reassurance messages in loading UX
+- [x] Export loading states + user-visible error feedback
+- [x] Accessibility improvements (aria-labels, roles, keyboard nav)
+- [x] Meta tags, OG tags, font preloading in index.html
+- [x] Vite manual chunks for better caching
+- [x] API key renamed to GEMINI_API_KEY (with VITE_ fallback)
+- [x] Fixed Object URL memory leaks in export handlers
+- [x] Fixed JSON parsing crash in generateABTests.js
+- [x] Fixed getLearnings() re-render issue (cached in state)
+- [x] Memoized filteredRecommendations with useMemo
 
 ## COMPLETED (v1.2.1 — March 18, 2026)
 
@@ -88,15 +106,8 @@ These features are implemented but need real-world testing with a Gemini API key
 
 ### Phase 1 — Critical (Do These First)
 
-#### 1. Competitor Analysis (Currently Stubbed)
-**Status**: The UI accepts competitor URLs and sends them to the backend, but `api/analyze.js` never actually scrapes or analyzes them. The `competitor_analysis` field is always empty.
-**What to do**:
-- In `api/analyze.js`, in Phase 1, add scraping of competitor URLs in parallel with the main site scrape
-- In Phase 2, add a 4th AI call that compares the main site's HTML against competitor HTML
-- Use the existing `competitor_analysis` schema: `{ overview: string, comparisons: [{ competitor, difference, advantage }] }`
-- Populate the `competitor_analysis` field in the merged report
-- The UI for displaying competitor analysis already exists in App.jsx (search for "COMPETITOR WIDGET")
-- Test with 1-2 competitor URLs
+#### 1. ~~Competitor Analysis~~ ✅ DONE (v1.3.0)
+**Status**: Completed. Competitor URLs are scraped in parallel during Phase 1, analyzed via a 4th AI call in Phase 2, and displayed in the existing Competitive Intelligence UI panel.
 
 #### 2. ~~Print CSS for Checklist Panel~~ ✅ DONE (v1.2.1)
 **Status**: Completed. Print CSS rules added for checklist SVG circles, category cards, and critical failure flags.
@@ -166,7 +177,7 @@ These features are implemented but need real-world testing with a Gemini API key
 
 ## KNOWN BUGS / ISSUES
 
-1. **Competitor analysis is a no-op** — URLs are accepted but never scraped or analyzed. The `competitor_analysis` field in the report is always `{ overview: "", comparisons: [] }`.
+1. ~~**Competitor analysis is a no-op**~~ ✅ Fixed in v1.3.0 — Competitors are now scraped and analyzed via a 4th AI call.
 2. **Chat `updated_report` can be partial** — Gemini sometimes returns incomplete report objects. The frontend JSON equality check prevents dashboard breakage, but the update is silently lost.
 3. **localStorage cap** — 20 audits / 50 insights is a soft cap. Heavy users could still bloat localStorage on older browsers.
 4. ~~**Print CSS missing for checklist panel**~~ ✅ Fixed in v1.2.1
