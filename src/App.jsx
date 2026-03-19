@@ -252,9 +252,10 @@ const STEP_HEADERS = [
 ];
 
 const LOADING_PHRASES = [
-  "Parsing DOM tree...", "Evaluating semantic structure...", "Checking contrast ratios...",
-  "Analyzing mobile responsiveness...", "Measuring Core Web Vitals...", "Extracting inline styles...",
-  "Identifying trust signals...", "Cross-referencing competitors...", "Calculating cognitive load..."
+  "Parsing HTML structure & headings...", "Checking CTA placement above the fold...", "Evaluating mobile tap targets (44px min)...",
+  "Scanning for trust signals & reviews...", "Analyzing content readability & flow...", "Checking form labels & validation...",
+  "Measuring hero section height ratio...", "Detecting FAQ & social proof sections...", "Scoring against 50+ checklist criteria...",
+  "Comparing against past audit patterns...", "Extracting SEO meta & keyword data...", "Evaluating visual hierarchy & whitespace..."
 ];
 
 // --- CLIPBOARD HELPER (replaces deprecated execCommand) ---
@@ -402,11 +403,13 @@ function AppContent() {
     setAppError(null);
     
     const hasCompetitors = competitorsInput.trim().length > 0;
+    const competitorCount = competitorsInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).length;
+    const hostname = (() => { try { return new URL(formattedUrl).hostname; } catch { return formattedUrl; } })();
     const dynamicSteps = [
-      { id: 'scrape', label: 'Extracting Site Architecture...', icon: <Code size={18} /> },
-      { id: 'metrics', label: 'Analyzing Core Web Vitals...', icon: <Activity size={18} /> },
-      { id: 'screenshot', label: 'Evaluating Visual Hierarchy...', icon: <MonitorSmartphone size={18} /> },
-      { id: 'claude', label: 'Synthesizing AI Revenue Strategy...', icon: <BrainCircuit size={18} /> },
+      { id: 'scrape', label: `Scraping ${hostname}${hasCompetitors ? ` + ${competitorCount} competitor${competitorCount > 1 ? 's' : ''}` : ''}...`, icon: <Code size={18} />, detail: 'Fetching HTML, removing scripts & styles' },
+      { id: 'metrics', label: 'Running PageSpeed & capturing screenshot...', icon: <Activity size={18} />, detail: 'Google Lighthouse performance audit' },
+      { id: 'ai_analysis', label: `AI scoring against ${10} checklist categories...`, icon: <BrainCircuit size={18} />, detail: '3 parallel AI calls: overview + recommendations + checklist' },
+      { id: 'compile', label: 'Compiling final report...', icon: <Target size={18} />, detail: `${serverLearnings.totalLearnings > 0 ? `Enhanced with ${serverLearnings.totalLearnings} past audit${serverLearnings.totalLearnings !== 1 ? 's' : ''} learned` : 'Generating actionable recommendations'}` },
     ];
     setAnalysisSteps(dynamicSteps);
 
@@ -510,7 +513,9 @@ Your job:
 - Reference checklist categories and their specific scores when relevant (e.g., "Your CTA score is 45/100 because...")
 - When replacing a recommendation, ensure the replacement addresses a DIFFERENT checklist weakness
 - Proactively suggest improvements: "Based on your CTA score of 45, would you like me to..."
-- If the user shares their industry/audience, adapt all advice accordingly`
+- If the user shares their industry/audience, adapt all advice accordingly
+- When discussing competitors, reference ALL competitors in the competitor_analysis.comparisons array — compare EACH one, not just the first. Format as: "Against [competitor], your advantage is [advantage]. They do better at [difference]."
+- If the user asks to "compare" or "analyze competitors", provide a detailed comparison for EVERY entry in the comparisons array — never skip any`
     };
 
     try {
@@ -1193,8 +1198,13 @@ Your job:
                         {isPast ? <CheckCircle2 size={24} className="animate-in zoom-in duration-300 text-[#4ADE80]" /> : step.icon}
                         {isActive && <div className="absolute inset-0 rounded-2xl border-2 border-[#F25430] animate-ping opacity-30"></div>}
                       </div>
-                      <div style={{ color: isActive ? "#fff" : isPast ? BRAND.textMuted : "#6B7280", fontSize: "17px", fontWeight: isActive ? "800" : "600" }} className="transition-all">
-                        {step.label}
+                      <div className="transition-all">
+                        <div style={{ color: isActive ? "#fff" : isPast ? BRAND.textMuted : "#6B7280", fontSize: "17px", fontWeight: isActive ? "800" : "600" }}>
+                          {step.label}
+                        </div>
+                        {isActive && step.detail && (
+                          <div className="text-xs text-[#6B7280] mt-0.5 animate-in fade-in duration-300">{step.detail}</div>
+                        )}
                       </div>
                     </div>
                   )
