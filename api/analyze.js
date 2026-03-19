@@ -301,13 +301,45 @@ export default async function handler(req, res) {
       imageParts.push({ inlineData: { mimeType: pageSpeedData.mimeType, data: pageSpeedData.screenshot } });
     }
 
-    // Build learning context from past audits
+    // Build learning context from past audits — with aggregate pattern detection
     let learningContext = "";
     if (pastLearnings && pastLearnings.length > 0) {
       const recentLearnings = pastLearnings.slice(-5);
-      learningContext = `\n\n[LEARNING FROM PAST AUDITS - Use these patterns to give SMARTER advice]:
-${recentLearnings.map((l, i) => `${i + 1}. Site "${l.url}" (Score: ${l.score}/100) — Key issues: ${l.topIssues?.join('; ') || 'N/A'} | Insights from feedback: ${l.feedbackInsights?.join('; ') || 'None yet'}`).join('\n')}
-If you see similar patterns in THIS site, call them out and provide more targeted fixes based on what worked before.`;
+
+      // Aggregate pattern detection: find recurring checklist weaknesses
+      const weaknessCounts = {};
+      const allInsights = [];
+      const allIssues = [];
+      for (const l of pastLearnings) {
+        for (const w of (l.checklistWeaknesses || [])) {
+          weaknessCounts[w] = (weaknessCounts[w] || 0) + 1;
+        }
+        allInsights.push(...(l.feedbackInsights || []));
+        allIssues.push(...(l.topIssues || []));
+      }
+      const recurringWeaknesses = Object.entries(weaknessCounts)
+        .filter(([, count]) => count >= 2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, count]) => `"${name}" (failed in ${count}/${pastLearnings.length} audits)`);
+
+      // Deduplicate insights
+      const uniqueInsights = [...new Set(allInsights)].slice(-10);
+
+      learningContext = `\n\n[LEARNING FROM PAST AUDITS — Use these patterns to give SMARTER, MORE TARGETED advice]:
+
+INDIVIDUAL AUDIT HISTORY (most recent ${recentLearnings.length}):
+${recentLearnings.map((l, i) => `${i + 1}. "${l.url}" (Score: ${l.score}/100) — Issues: ${l.topIssues?.join('; ') || 'N/A'} | Checklist weaknesses: ${l.checklistWeaknesses?.join(', ') || 'N/A'}`).join('\n')}
+
+${recurringWeaknesses.length > 0 ? `RECURRING PATTERNS ACROSS ${pastLearnings.length} AUDITS (pay extra attention to these):
+${recurringWeaknesses.map(w => `- ${w}`).join('\n')}
+→ These are systemic issues the user keeps encountering. Flag them prominently if they appear on THIS site too.` : ''}
+
+${uniqueInsights.length > 0 ? `CRO INSIGHTS FROM USER FEEDBACK (proven learnings):
+${uniqueInsights.map(i => `- ${i}`).join('\n')}
+→ Apply these insights proactively to THIS audit where relevant.` : ''}
+
+INSTRUCTIONS: Compare this site against past patterns. If you see the SAME weaknesses recurring, call it out explicitly ("This is a pattern we've seen across multiple sites — prioritize fixing X"). Give more specific, nuanced advice based on accumulated knowledge.`;
     }
 
     const siteContext = `URL: ${url}\nPageSpeed: ${pageSpeedData.scoreText}\nUser Goals: ${context || "N/A"}`;

@@ -67,46 +67,9 @@ const BRAND = {
   accentDanger: "#F87171"
 };
 
-// --- SCHEMA DEFINITIONS ---
-const REPORT_SCHEMA_PROPERTIES = {
-  overall_score: { type: "INTEGER", description: "Score from 1 to 100" },
-  summary: { type: "STRING" },
-  strengths: { type: "ARRAY", items: { type: "STRING" } },
-  quick_wins: { type: "ARRAY", items: { type: "STRING" } },
-  competitor_analysis: {
-    type: "OBJECT",
-    description: "Only fill this if competitor URLs were analyzed",
-    properties: {
-      overview: { type: "STRING", description: "High level summary of how the site compares to competitors" },
-      comparisons: {
-        type: "ARRAY",
-        items: {
-          type: "OBJECT",
-          properties: {
-            competitor: { type: "STRING" },
-            difference: { type: "STRING", description: "What they are doing differently in UI/Copy" },
-            advantage: { type: "STRING", description: "How we can beat them" }
-          }
-        }
-      }
-    }
-  },
-  recommendations: {
-    type: "ARRAY",
-    items: {
-      type: "OBJECT",
-      properties: {
-        id: { type: "INTEGER" },
-        priority: { type: "STRING", description: "high, medium, or low" },
-        category: { type: "STRING", description: "e.g., cta, trust, ux, speed, copy, above-the-fold" },
-        issue: { type: "STRING" },
-        recommendation: { type: "STRING" },
-        expected_impact: { type: "STRING" },
-        implementation: { type: "STRING" }
-      }
-    }
-  }
-};
+// --- SCHEMA NOTE ---
+// Report schema is defined server-side in api/analyze.js (OVERVIEW_SCHEMA, RECOMMENDATIONS_SCHEMA, CHECKLIST_SCHEMA).
+// See CLAUDE.md "Report Schema" section for the full structure.
 
 const DEFAULT_FUN_FACTS = [
   "A 1-second delay in page load time can yield a 7% reduction in conversions.",
@@ -155,10 +118,17 @@ const saveLearning = (auditResult) => {
       score: auditResult.overall_score,
       timestamp: auditResult.audit_metadata?.timestamp || new Date().toISOString(),
       topIssues: (auditResult.recommendations || []).slice(0, 3).map(r => r.issue),
+      topCategories: (auditResult.recommendations || []).slice(0, 3).map(r => r.category),
       checklistWeaknesses: Object.entries(auditResult.checklist_scores || {})
         .filter(([, v]) => v < 50)
         .map(([k]) => k.replace(/_/g, ' ')),
-      feedbackInsights: []
+      checklistStrengths: Object.entries(auditResult.checklist_scores || {})
+        .filter(([, v]) => v >= 80)
+        .map(([k]) => k.replace(/_/g, ' ')),
+      allChecklistScores: auditResult.checklist_scores || {},
+      criticalFlags: (auditResult.checklist_flags || []).slice(0, 3),
+      feedbackInsights: [],
+      chatModifications: 0
     };
     learnings.push(entry);
     // Keep only last 20 audits
@@ -189,14 +159,26 @@ const getPastLearningsForPrompt = () => {
   try {
     const learnings = getLearnings();
     const insights = JSON.parse(localStorage.getItem(INSIGHTS_KEY) || "[]");
-    // Attach global insights to the learning entries
+    // Attach global insights to the most recent learning entry for prompt inclusion
     if (insights.length > 0 && learnings.length > 0) {
       const last = learnings[learnings.length - 1];
       const globalInsights = insights.slice(-10).map(i => i.text);
       last.feedbackInsights = [...new Set([...(last.feedbackInsights || []), ...globalInsights])];
     }
-    return learnings.slice(-5);
+    // Return all learnings (backend will aggregate patterns from them)
+    return learnings;
   } catch (e) { return []; }
+};
+
+// Track when chat modifies the report (increments modification counter for latest audit)
+const trackChatModification = () => {
+  try {
+    const learnings = getLearnings();
+    if (learnings.length > 0) {
+      learnings[learnings.length - 1].chatModifications = (learnings[learnings.length - 1].chatModifications || 0) + 1;
+      localStorage.setItem(LEARNINGS_KEY, JSON.stringify(learnings));
+    }
+  } catch (e) {}
 };
 
 // --- CHECKLIST CATEGORY LABELS ---
@@ -399,22 +381,34 @@ export default function App() {
     const newHistory = [...chatHistory, userMessage];
     setChatHistory(newHistory); setChatInput(""); setIsChatLoading(true);
 
+    // Build rich context for the chat AI
+    const pastData = getPastLearningsForPrompt();
+    const recentPast = pastData.slice(-3);
+    const allInsightsRaw = JSON.parse(localStorage.getItem(INSIGHTS_KEY) || "[]");
+    const uniqueInsights = [...new Set(allInsightsRaw.map(i => i.text))].slice(-10);
+
     const payload = {
       history: newHistory,
-      systemInstruction: `You are an expert CRO Strategy Assistant for the GROWAGENT platform. You have deep knowledge of conversion rate optimization, A/B testing, and the GrowMe CRO checklist.
+      systemInstruction: `You are an expert CRO Strategy Assistant for the GROWAGENT platform. You have deep knowledge of conversion rate optimization, A/B testing, and the GrowMe Basic Website Standards checklist.
 
 CURRENT REPORT STATE:
 ${JSON.stringify(report)}
 
-PAST AUDIT INSIGHTS (learn from these):
-${JSON.stringify(getPastLearningsForPrompt().slice(-3))}
+PAST AUDIT HISTORY (${pastData.length} total audits learned from):
+${recentPast.map((l, i) => `${i + 1}. "${l.url}" — Score: ${l.score}/100 | Weak: ${l.checklistWeaknesses?.join(', ') || 'N/A'} | Strong: ${l.checklistStrengths?.join(', ') || 'N/A'}`).join('\n')}
+
+${uniqueInsights.length > 0 ? `ACCUMULATED CRO INSIGHTS (proven learnings from past conversations):
+${uniqueInsights.map(i => `- ${i}`).join('\n')}` : ''}
 
 Your job:
-- Answer questions about the audit results with specificity
-- Help the user understand WHY certain issues matter for conversions
+- Answer questions about the audit results with specificity — cite exact scores and checklist items
+- Help the user understand WHY certain issues matter for conversions with data-backed reasoning
 - If the user wants to modify the report, return an updated_report with ALL fields preserved
-- Extract reusable CRO insights from the conversation into learning_insight
-- Reference checklist categories and scores when relevant`
+- ACTIVELY extract reusable CRO insights from the conversation into learning_insight — look for business context, industry patterns, what works/doesn't work for this user
+- Reference checklist categories and their specific scores when relevant (e.g., "Your CTA score is 45/100 because...")
+- When replacing a recommendation, ensure the replacement addresses a DIFFERENT checklist weakness
+- Proactively suggest improvements: "Based on your CTA score of 45, would you like me to..."
+- If the user shares their industry/audience, adapt all advice accordingly`
     };
 
     try {
@@ -436,14 +430,26 @@ Your job:
 
       if (responseData.updated_report && JSON.stringify(responseData.updated_report) !== JSON.stringify(report)) {
         setReport(responseData.updated_report); setReportUpdatedFlash(true);
+        trackChatModification();
         setTimeout(() => setReportUpdatedFlash(false), 1500);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (error) {
       console.error("Chat Error:", error);
-      setChatHistory([...newHistory, { role: "model", parts: [{ text: "Sorry, I had trouble processing that request. Please try again." }] }]);
+      setChatHistory([...newHistory, { role: "model", parts: [{ text: "⚠️ I had trouble processing that request. Click the retry button or try rephrasing your question." }], _error: true }]);
     }
     finally { setIsChatLoading(false); }
+  };
+
+  const handleChatRetry = () => {
+    // Remove the error message and replay the last user message
+    const lastUserIdx = chatHistory.map(m => m.role).lastIndexOf('user');
+    if (lastUserIdx >= 0) {
+      const lastUserMsg = chatHistory[lastUserIdx].parts[0].text;
+      const historyBeforeError = chatHistory.slice(0, lastUserIdx);
+      setChatHistory(historyBeforeError);
+      setChatInput(lastUserMsg);
+    }
   };
 
   const handleGenerateCodePatch = async (rec) => {
@@ -561,6 +567,37 @@ Your job:
 
           /* ── TOP WIDGETS: Fix score circle ── */
           svg circle { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
+
+          /* ── CHECKLIST SCORES PANEL: Print with colors ── */
+          [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] {
+            display: grid !important;
+            grid-template-columns: repeat(5, 1fr) !important;
+            gap: 12px !important;
+          }
+          [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] > div {
+            background: #f9f9f9 !important;
+            border: 1px solid #ddd !important;
+            page-break-inside: avoid !important;
+            print-color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
+          }
+          [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] svg circle {
+            print-color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
+          }
+          [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] span {
+            color: #111 !important;
+          }
+          /* Checklist flags: preserve red styling */
+          [class*="bg-[#F87171]/10"] {
+            background: #fef2f2 !important;
+            border: 1px solid #fca5a5 !important;
+            print-color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
+          }
+          [class*="bg-[#F87171]/10"] * {
+            color: #dc2626 !important;
+          }
           
           /* ── FLIP CARDS: Flatten entirely for print ── */
           .flip-card {
@@ -1570,6 +1607,11 @@ Your job:
                       </div>
                       <div style={{ background: msg.role === 'user' ? "#242830" : "transparent", border: msg.role === 'user' ? "none" : `1px solid ${BRAND.bgSurfaceHighlight}`, color: "#E5E7EB", maxWidth: "80%" }} className={`p-6 text-[16px] leading-relaxed font-medium whitespace-pre-wrap ${msg.role === 'user' ? 'rounded-3xl rounded-tr-md shadow-md' : 'rounded-3xl rounded-tl-md bg-[#1A1D24] shadow-xl'}`}>
                         {msg.parts[0].text}
+                        {msg._error && (
+                          <button onClick={handleChatRetry} className="mt-3 flex items-center gap-2 px-4 py-2 bg-[#F25430] hover:bg-[#D94A2A] text-white text-sm font-bold rounded-lg transition-all active:scale-95">
+                            <RefreshCw size={14} /> Retry
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}

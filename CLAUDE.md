@@ -4,7 +4,7 @@
 
 ## Quick Status
 
-- **Version**: 1.2.0 (March 18, 2026)
+- **Version**: 1.2.1 (March 18, 2026)
 - **Live URL**: https://cro-ai-agent.vercel.app/
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
@@ -46,13 +46,25 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - Learning badge in header shows count of past audits learned
 - All docs updated (CLAUDE.md, README, CHANGELOG, DEVELOPER.md, TODO.md)
 
+### v1.2.1 (March 18, 2026) — Smarter Learning + Chat Improvements
+- Aggregate pattern detection: AI now identifies recurring checklist weaknesses across all past audits
+- Richer audit memory: stores strengths, critical flags, all scores, and chat modification count
+- Chat retry button on error messages (was dead-end before)
+- Chat modification tracking in learning system
+- Print CSS for checklist panel (SVG circles, category cards, critical flags)
+- Chat AI rules expanded from 6 to 10 for more proactive, insightful conversations
+- Proactive insight extraction: AI actively looks for reusable CRO learnings in every chat
+- Removed stale `REPORT_SCHEMA_PROPERTIES` dead code from App.jsx
+- Deleted orphaned `fix.py` from project root
+- All 6 documentation files updated with mandatory update rules
+
 ## What To Do Next (Immediate Priority)
 
 **See `TODO.md` for the full prioritized action plan.** The top 3 items are:
 
-1. **Test v1.2.0 on production** — Run a real audit at https://cro-ai-agent.vercel.app/ and verify checklist scores, recommendations with `checklist_ref`, chat with `learning_insight`, and learning persistence across multiple audits.
+1. **Test v1.2.1 on production** — Run a real audit at https://cro-ai-agent.vercel.app/ and verify checklist scores, recommendations with `checklist_ref`, chat with `learning_insight` and retry button, learning persistence across multiple audits, and print CSS for checklist panel.
 2. **Wire up competitor analysis** — The UI accepts competitor URLs but `api/analyze.js` never scrapes or analyzes them. The display UI already exists.
-3. **Add print CSS for checklist panel** — The new checklist scores section needs `@media print` rules in App.jsx.
+3. **Server-side learning persistence** — Move from localStorage-only to Vercel KV or Supabase for cross-device persistence.
 
 ## Architecture
 
@@ -182,10 +194,10 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 
 1. **Competitor analysis is a no-op** — URLs are accepted in the UI and sent to the backend, but `api/analyze.js` never scrapes or analyzes them. The `competitor_analysis` field in the report is always empty.
 2. **Chat `updated_report` can be partial** — Gemini sometimes returns incomplete report objects. The frontend checks JSON equality to avoid breaking state, but the update is silently lost.
-3. **PDF export uses `window.print()`** — Works but 3D layouts sometimes misrender. The new checklist panel has no print CSS rules yet.
+3. **PDF export uses `window.print()`** — Works, 3D layouts are flattened. Checklist panel now has print CSS (v1.2.1).
 4. **localStorage learning cap** — 20 audits / 50 insights. Heavy users could still bloat localStorage on older browsers.
-5. **No error state for chat** — If the chat API returns a 500, the user sees a generic message but no retry button.
-6. **`REPORT_SCHEMA_PROPERTIES` in App.jsx is stale** — It's the old schema from v1.0.0 (lines ~68-106). It's not used by the backend anymore (backend has its own schemas) but is still sitting in the frontend code. Can be removed or updated.
+5. ~~**No error state for chat**~~ — Fixed in v1.2.1. Retry button now appears on chat error messages.
+6. ~~**Stale schema in App.jsx**~~ — Fixed in v1.2.1. Dead code removed.
 
 ## File Map
 
@@ -196,7 +208,7 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 │   ├── generateCode.js     # Code patch generator (Tailwind CSS)
 │   └── generateABTests.js  # A/B copy variation generator
 ├── src/
-│   ├── App.jsx             # Entire frontend (~1630 lines, single file)
+│   ├── App.jsx             # Entire frontend (~1600 lines, single file)
 │   └── main.jsx            # React entry point
 ├── public/                 # Static assets
 ├── CLAUDE.md               # THIS FILE — read first

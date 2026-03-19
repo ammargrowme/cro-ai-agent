@@ -4,6 +4,89 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 4: v1.2.1 — March 18, 2026
+
+**Goal**: Make the learning system significantly smarter, improve chat reliability and insight extraction, fix known bugs (print CSS, chat errors, dead code), and ensure all documentation is comprehensive enough for cold-start AI handoff.
+
+### 1. Smarter Learning System
+
+**Problem**: Past audit data was stored but only used in a simple list format. The AI couldn't identify recurring patterns across multiple audits, and audit memory was shallow (only stored issues and weaknesses, not strengths or modification history).
+
+**Solution**: Enhanced both the storage and the prompt generation.
+
+**What changed in `src/App.jsx`**:
+- `saveLearning()` now stores: `topCategories`, `checklistStrengths`, `allChecklistScores`, `criticalFlags`, and `chatModifications` in addition to the previous fields
+- `getPastLearningsForPrompt()` now returns ALL learnings (not just last 5) so the backend can run aggregate analysis
+- Added `trackChatModification()` to count how many times the user modifies the report via chat for a given audit
+
+**What changed in `api/analyze.js`**:
+- `learningContext` completely rewritten with 3 sections:
+  1. **Individual audit history** (most recent 5, with details)
+  2. **Recurring patterns** — counts how often each checklist weakness appears across ALL past audits and flags any that recur in 2+ audits (e.g., "cta focus failed in 4/6 audits")
+  3. **Accumulated insights** — deduplicated user feedback insights from chat
+- AI is explicitly instructed to compare the current site against past patterns and call out recurring weaknesses
+
+### 2. Enhanced Chat System
+
+**Problem**: Chat had 6 basic rules, no retry mechanism on errors, and the system instruction didn't include enough context about checklist strengths, weaknesses, or accumulated insights.
+
+**Solution**: Expanded chat capabilities significantly.
+
+**What changed in `api/chat.js`**:
+- Chat AI rules expanded from 6 to 10:
+  - Rule 3 enhanced: AI now actively looks for insights in every conversation
+  - Rule 6 enhanced: Replaced recommendations must target DIFFERENT checklist weaknesses
+  - Rule 7 (new): Adapt all recommendations to user's industry/audience when shared
+  - Rule 8 (new): Proactively suggest next steps
+  - Rule 9 (new): Cite exact checklist scores with numbers
+  - Rule 10 (new): Explain WHY original recommendations were made before replacing them
+
+**What changed in `src/App.jsx`**:
+- System instruction now includes: audit count, per-audit strengths AND weaknesses, accumulated CRO insights
+- Chat retry: Error messages now include `_error: true` flag, which renders a red "Retry" button
+- `handleChatRetry()` removes the error message and pre-fills the input with the last user message
+- `trackChatModification()` called when chat updates the report
+
+### 3. Print CSS for Checklist Panel
+
+**Problem**: Known bug #4 — CRO Checklist Scores section had no `@media print` rules. SVG circles, category scores, and critical failure flags didn't print correctly.
+
+**Solution**: Added comprehensive print CSS rules in the `@media print` block:
+- Checklist grid forced to 5-column layout for print
+- Category cards: light background, dark text, proper borders
+- SVG circles: `print-color-adjust: exact` for colored score indicators
+- Critical failure flags: red text/border preserved in print
+
+### 4. Code Cleanup
+
+- **Removed `REPORT_SCHEMA_PROPERTIES`**: Was the old v1.0.0 schema (~40 lines), never used by the backend. Replaced with a comment pointing to the correct schema location.
+- **Deleted `fix.py`**: Orphaned Python script from early development that performed string escaping on App.jsx.
+
+### 5. Documentation
+
+Updated all 6 mandatory documentation files:
+- `CHANGELOG.md` — Full v1.2.1 entry with Added/Changed/Fixed/Removed sections
+- `TODO.md` — v1.2.1 completed items added, known bugs marked as fixed, testing checklist updated
+- `CLAUDE.md` — Version bumped, session history added, known issues updated, file map updated
+- `IMPLEMENTATION_RECAP.md` — This section
+- `DEVELOPER.md` — Learning system architecture updated
+- `README.md` — Features list updated
+
+Added **mandatory documentation update rules** to CLAUDE.md so future AI agents automatically update all docs with every commit without the user needing to ask.
+
+### Deployment Verification
+- **Build**: `npx vite build` passes (2.95s, 284KB JS gzipped to 81KB)
+- **Git**: All changes committed and pushed to main
+- **Auto-deploy**: https://cro-ai-agent.vercel.app/ will update automatically
+
+### What Still Needs Doing
+See `TODO.md` for the full prioritized plan. Top 3:
+1. Test v1.2.1 on production (especially pattern detection on 2nd+ audits)
+2. Wire up competitor analysis (UI exists, backend doesn't scrape competitors)
+3. Server-side learning persistence (Vercel KV or Supabase)
+
+---
+
 ## Session 3: v1.2.0 — March 18, 2026
 
 **Goal**: Make the AI smarter by learning from every run, integrate the GrowMe CRO checklist, fix the chat system, and prepare comprehensive docs for remote handoff.

@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-03-18 (v1.2.0)
+**Last updated**: 2026-03-18 (v1.2.1)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 
@@ -10,7 +10,7 @@
 
 ## YOUR FIRST TASK (Start Here)
 
-Before building anything new, **test v1.2.0 on production**. Open https://cro-ai-agent.vercel.app/ and run through this checklist:
+**Test v1.2.1 on production.** Open https://cro-ai-agent.vercel.app/ and run through this checklist:
 
 1. Enter a URL (e.g., `growme.ca`) and click Analyze
 2. Verify the **CRO Checklist Audit** panel appears with 10 category scores (circular indicators)
@@ -18,12 +18,30 @@ Before building anything new, **test v1.2.0 on production**. Open https://cro-ai
 4. Verify each recommendation card (flip it) shows a **checklist reference** badge
 5. Open the **AI Chat Terminal** — send a message — verify it responds coherently
 6. Ask the chat to "remove recommendation #1 and replace it with something about mobile" — verify the dashboard updates live
-7. Run a **2nd audit** on a different URL — verify the header shows "1 past audit learned"
-8. Check the AI's recommendations on the 2nd audit — they should reference patterns from the 1st audit if similar issues exist
+7. **Test chat retry**: Force an error (e.g., send an extremely long message) — verify the red "Retry" button appears
+8. Run a **2nd audit** on a different URL — verify the header shows "1 past audit learned"
+9. Check the AI's recommendations on the 2nd audit — **they should reference patterns from the 1st audit** and mention recurring weaknesses if similar issues exist
+10. **Test print**: Click PDF button — verify the checklist scores panel renders with colored circles and critical failures show red badges
+11. After chatting, check that the learning badge count increments appropriately
 
 Report any failures as bugs in the "KNOWN BUGS" section below, then proceed to building new features.
 
 ---
+
+## COMPLETED (v1.2.1 — March 18, 2026)
+
+- [x] Aggregate pattern detection across all past audits (recurring weakness flagging)
+- [x] Richer audit memory (strengths, critical flags, all scores, chat modifications)
+- [x] Chat retry button on error messages
+- [x] Chat modification tracking in learning system
+- [x] Print CSS for checklist scores panel (SVG circles, category cards, critical flags)
+- [x] Proactive insight extraction in chat AI
+- [x] Enhanced learning prompts with individual + aggregate + insight sections
+- [x] Chat system instruction enriched with full audit history context
+- [x] Chat AI rules expanded to 10 (from 6)
+- [x] Removed stale `REPORT_SCHEMA_PROPERTIES` dead code from App.jsx
+- [x] Deleted orphaned `fix.py` from project root
+- [x] All 6 documentation files updated
 
 ## COMPLETED (v1.2.0 — March 18, 2026)
 
@@ -80,15 +98,8 @@ These features are implemented but need real-world testing with a Gemini API key
 - The UI for displaying competitor analysis already exists in App.jsx (search for "COMPETITOR WIDGET")
 - Test with 1-2 competitor URLs
 
-#### 2. Print CSS for Checklist Panel
-**Status**: The new checklist scores panel (`CRO CHECKLIST SCORES` section in App.jsx) has no `@media print` rules.
-**What to do**:
-- In the `@media print` `<style>` block in App.jsx (around line 414), add rules for:
-  - Checklist SVG circles: force `print-color-adjust: exact`
-  - Checklist category cards: light background, dark text
-  - Checklist flags: ensure red borders/text print correctly
-  - The whole panel: `page-break-inside: avoid`
-- Test with `Ctrl+P` in Chrome
+#### 2. ~~Print CSS for Checklist Panel~~ ✅ DONE (v1.2.1)
+**Status**: Completed. Print CSS rules added for checklist SVG circles, category cards, and critical failure flags.
 
 #### 3. PDF Export with Proper Library
 **Status**: Currently uses `window.print()` which has 3D rendering issues.
@@ -158,10 +169,10 @@ These features are implemented but need real-world testing with a Gemini API key
 1. **Competitor analysis is a no-op** — URLs are accepted but never scraped or analyzed. The `competitor_analysis` field in the report is always `{ overview: "", comparisons: [] }`.
 2. **Chat `updated_report` can be partial** — Gemini sometimes returns incomplete report objects. The frontend JSON equality check prevents dashboard breakage, but the update is silently lost.
 3. **localStorage cap** — 20 audits / 50 insights is a soft cap. Heavy users could still bloat localStorage on older browsers.
-4. **Print CSS missing for checklist panel** — The new CRO Checklist Scores section has no `@media print` rules. SVG circles won't print colors correctly.
-5. **No retry for chat errors** — If the chat API returns a 500, the user sees "Sorry, I had trouble processing that request" but has no retry button.
-6. **Stale schema in App.jsx** — `REPORT_SCHEMA_PROPERTIES` (lines ~68-106) is the old v1.0.0 schema. It's never used by the backend (which has its own schemas) but is dead code in the frontend. Can be safely removed.
-7. **`fix.py` is orphaned** — There's a `fix.py` file in the root that appears to be from an early development session. It can likely be deleted.
+4. ~~**Print CSS missing for checklist panel**~~ ✅ Fixed in v1.2.1
+5. ~~**No retry for chat errors**~~ ✅ Fixed in v1.2.1 — Retry button now appears on error messages.
+6. ~~**Stale schema in App.jsx**~~ ✅ Fixed in v1.2.1 — Dead code removed.
+7. ~~**`fix.py` is orphaned**~~ ✅ Fixed in v1.2.1 — File deleted.
 
 ---
 
@@ -176,4 +187,4 @@ These features are implemented but need real-world testing with a Gemini API key
 7. After testing, pick the next item from "NEXT FEATURES TO BUILD"
 
 ---
-*Last updated by Claude Opus 4.6 — March 18, 2026*
+*Last updated by Claude Opus 4.6 — March 18, 2026 (v1.2.1)*

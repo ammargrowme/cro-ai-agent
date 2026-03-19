@@ -21,7 +21,7 @@ GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) au
 - **Live Site Scraper**: Automatically extracts HTML, CSS structure, and DOM hierarchy from any public URL.
 - **Multimodal Analysis**: Combines text-based code analysis with visual screenshot interpretation using Gemini 2.5 Flash.
 - **CRO Checklist Audit**: Scores websites against a 50+ criteria professional checklist across 10 categories.
-- **Learning System**: Gets smarter with every audit — past results and chat insights feed into future analysis.
+- **Adaptive Learning System**: Gets smarter with every audit — detects recurring patterns across audits, extracts insights from chat feedback, and applies accumulated knowledge to future analysis.
 - **Secure Backend Proxy**: All API calls are routed through Vercel Serverless Functions to protect sensitive API keys.
 - **Priority-Based Strategy**: Generates 6 High, Medium, and Low priority recommendations mapped to checklist items.
 - **Developer Handoff**: Each recommendation includes an AI-generated **Code Patch** (HTML/Tailwind) and **A/B Test Variations**.
@@ -64,10 +64,12 @@ GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) au
 
 GROWAGENT gets smarter with every audit:
 
-1. **Audit Memory**: After each audit, the key results (score, top issues, checklist weaknesses) are saved locally.
-2. **Chat Insights**: When you discuss recommendations in the AI chat, the system extracts reusable CRO insights (e.g., "Sites without sticky CTA lose 20-30% mobile conversions").
-3. **Future Injection**: Past learnings are automatically included in future AI prompts, so the agent can spot patterns and give more targeted advice.
-4. **Learning Indicator**: The header shows how many past audits the system has learned from.
+1. **Audit Memory**: After each audit, comprehensive results are saved — scores, issues, checklist strengths AND weaknesses, critical flags, and modification history.
+2. **Pattern Detection**: The system tracks recurring checklist weaknesses across ALL past audits. If "CTA Focus" fails in 4 out of 6 audits, the AI will flag it as a systemic pattern and prioritize it.
+3. **Chat Insights**: When you discuss recommendations in the AI chat, the system proactively extracts reusable CRO insights (e.g., "Sites without sticky CTA lose 20-30% mobile conversions"). These insights are applied to ALL future audits.
+4. **Feedback Loop**: Tell the AI "we already fixed this" or "we're a B2B company" — it adapts future recommendations and stores the context for next time.
+5. **Future Injection**: Past learnings, recurring patterns, and accumulated insights are all automatically included in future AI prompts.
+6. **Learning Indicator**: The header shows how many past audits the system has learned from.
 
 ---
 

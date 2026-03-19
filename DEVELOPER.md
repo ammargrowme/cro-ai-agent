@@ -47,17 +47,23 @@ All three results are merged into a single report object with `audit_metadata` a
 ```
 localStorage
 ├── growagent_learnings     # Array of past audit summaries (max 20)
-│   └── { url, score, timestamp, topIssues[], checklistWeaknesses[], feedbackInsights[] }
+│   └── { url, score, timestamp, topIssues[], topCategories[], checklistWeaknesses[],
+│          checklistStrengths[], allChecklistScores{}, criticalFlags[], feedbackInsights[],
+│          chatModifications: number }
 ├── growagent_insights      # Array of chat-extracted CRO insights (max 50)
 │   └── { text, timestamp }
 └── growagent_pagespeed_key # User's custom PageSpeed API key
 ```
 
 ### Data Flow
-1. **After each audit**: `saveLearning()` extracts key data from the report and stores it.
-2. **During chat**: If the AI returns a `learning_insight`, `addFeedbackInsight()` stores it and attaches it to the most recent learning entry.
-3. **Before each audit**: `getPastLearningsForPrompt()` retrieves the last 5 audits with their attached insights and sends them in the API request body.
-4. **In the AI prompt**: Past learnings are formatted as a "LEARNING FROM PAST AUDITS" section that instructs the AI to spot patterns and give more targeted advice.
+1. **After each audit**: `saveLearning()` extracts comprehensive data from the report — scores, issues, categories, checklist strengths AND weaknesses, all checklist scores, critical flags.
+2. **During chat**: If the AI returns a `learning_insight`, `addFeedbackInsight()` stores it. If chat modifies the report, `trackChatModification()` increments the counter.
+3. **Before each audit**: `getPastLearningsForPrompt()` retrieves ALL past audits (with attached insights) and sends them in the API request body.
+4. **In the AI prompt**: The backend builds a 3-part learning context:
+   - **Individual audit history** (most recent 5 with details)
+   - **Aggregate pattern detection** — counts recurring checklist weaknesses across ALL past audits, flags any that appear in 2+ audits
+   - **Accumulated insights** — deduplicated user feedback from past chat conversations
+5. **Pattern flagging**: If "cta focus" failed in 4/6 past audits, the AI is told to prioritize CTA issues and call out the pattern explicitly.
 
 ## CRO Checklist
 
@@ -108,9 +114,11 @@ The full GrowMe Basic Website Standards checklist is embedded as a string consta
 ```
 
 ### Key Behaviors
-- If `updated_report` is non-null and different from current report, the dashboard updates live with a flash animation.
+- If `updated_report` is non-null and different from current report, the dashboard updates live with a flash animation. `trackChatModification()` is called.
 - If `learning_insight` is non-null, it's stored via `addFeedbackInsight()` for future audits.
 - JSON parse failures fall back to treating raw text as the message.
+- On error, the message gets `_error: true` flag and a "Retry" button is rendered.
+- The chat AI has 10 detailed rules including: proactive insight extraction, citing exact scores, adapting to industry/audience, and explaining reasoning before replacing recommendations.
 
 ## Instructions for AI Support Agents
 
@@ -129,3 +137,4 @@ If you are an AI assistant working on this codebase:
 - **WebSockets**: Real-time streaming for report generation progress.
 - **Vector DB**: Storing CRO best practices for benchmarked industry scores.
 - **Competitor Scraping**: Actually scrape and analyze competitor URLs (currently accepted but not used).
+- **Learning Analytics**: Dashboard showing how the system has improved over time (avg score trends, most common issues, insight count).
