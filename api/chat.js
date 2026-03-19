@@ -98,9 +98,9 @@ RULES:
           required: ["message"]
         },
         temperature: 0.3,
-        maxOutputTokens: 16384,
+        maxOutputTokens: 8192,
         thinkingConfig: {
-          thinkingBudget: 4096
+          thinkingBudget: 1024
         }
       }
     };

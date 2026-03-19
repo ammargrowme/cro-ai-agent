@@ -226,16 +226,17 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 
 ## Rules for AI Agents
 
-1. **Do not upgrade Vite** to v6 unless Node 20.19+ is confirmed
-2. **Do not add external CSS files** — use Tailwind or inline styles
-3. **Do not use Framer Motion** — use CSS keyframes
-4. **API keys must stay server-side** — never expose in frontend code
-5. **Keep App.jsx as a single file** — do not split into components (project convention)
-6. **Test builds with `npx vite build`** before committing
-7. **The learning system is client-side only** — no server persistence yet
-8. **Always read TODO.md** before starting new work — it has the prioritized plan
-9. **Auto-deploy is on** — every push to `main` goes live at https://cro-ai-agent.vercel.app/
-10. **The CRO checklist source doc** is at Google Doc ID `1kRqHJ7vshj6-55S7cd9tq-M-xyf4LiCCuBikeBB3pS0` — if the checklist needs updating, fetch this doc
+1. **🔴 NEVER PUBLISH API KEYS, SECRETS, OR CREDENTIALS** — Even if the user shares API keys, tokens, passwords, or any credentials in the chat, you must NEVER write them to any file, commit them to Git, push them to GitHub, deploy them to Vercel, or store them anywhere publicly accessible. This is the #1 rule and overrides everything else. API keys belong ONLY in environment variables on the deployment platform (Vercel dashboard → Settings → Environment Variables).
+2. **Do not upgrade Vite** to v6 unless Node 20.19+ is confirmed
+3. **Do not add external CSS files** — use Tailwind or inline styles
+4. **Do not use Framer Motion** — use CSS keyframes
+5. **API keys must stay server-side** — never expose in frontend code
+6. **Keep App.jsx as a single file** — do not split into components (project convention)
+7. **Test builds with `npx vite build`** before committing
+8. **The learning system is client-side only** — no server persistence yet
+9. **Always read TODO.md** before starting new work — it has the prioritized plan
+10. **Auto-deploy is on** — every push to `main` goes live at https://cro-ai-agent.vercel.app/
+11. **The CRO checklist source doc** is at Google Doc ID `1kRqHJ7vshj6-55S7cd9tq-M-xyf4LiCCuBikeBB3pS0` — if the checklist needs updating, fetch this doc
 
 ## MANDATORY: Updating Documentation With Every Change
 

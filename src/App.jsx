@@ -1,5 +1,7 @@
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import {
   Globe,
   Search,
@@ -419,9 +421,33 @@ Your job:
       });
 
       if (!response.ok) throw new Error("Chat failed");
-      const responseData = await response.json();
+      let responseData = await response.json();
 
-      setChatHistory([...newHistory, { role: "model", parts: [{ text: responseData.message }] }]);
+      // Safety: if responseData is a string (double-encoded), parse it
+      if (typeof responseData === 'string') {
+        try { responseData = JSON.parse(responseData); } catch (e) { responseData = { message: responseData }; }
+      }
+
+      // Safety: if message contains raw JSON, extract just the message text
+      let chatMessage = responseData.message || "";
+      if (chatMessage.trim().startsWith('{') && chatMessage.includes('"message"')) {
+        try {
+          const inner = JSON.parse(chatMessage);
+          if (inner.message) {
+            chatMessage = inner.message;
+            // Also capture inner fields if present
+            if (inner.learning_insight && !responseData.learning_insight) responseData.learning_insight = inner.learning_insight;
+            if (inner.updated_report && !responseData.updated_report) responseData.updated_report = inner.updated_report;
+          }
+        } catch (e) { /* not parseable, use as-is */ }
+      }
+
+      // Fallback if message is still empty
+      if (!chatMessage || chatMessage.trim().length === 0) {
+        chatMessage = "I've processed your request. Is there anything specific you'd like to discuss about the audit?";
+      }
+
+      setChatHistory([...newHistory, { role: "model", parts: [{ text: chatMessage }] }]);
 
       // Capture learning insights from chat
       if (responseData.learning_insight) {
@@ -512,7 +538,90 @@ Your job:
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `GrowAgent_${new URL(url).hostname}.md`; a.click();
   };
 
-  const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); };
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const reportDashboardRef = useRef(null);
+
+  const handleExportPDF = async () => {
+    if (!reportDashboardRef.current || !report) return;
+    setShowExportMenu(false);
+    try {
+      const element = reportDashboardRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#0B0C10',
+        logging: false,
+        windowWidth: 1200
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = pdfWidth / imgWidth;
+      const scaledHeight = imgHeight * ratio;
+
+      // Multi-page support
+      let yOffset = 0;
+      while (yOffset < scaledHeight) {
+        if (yOffset > 0) pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, -yOffset, pdfWidth, scaledHeight);
+        yOffset += pdfHeight;
+      }
+
+      pdf.save(`GrowAgent_${new URL(url).hostname}_CRO_Report.pdf`);
+    } catch (err) {
+      console.error("PDF export error:", err);
+    }
+  };
+
+  const handleExportPNG = async () => {
+    if (!reportDashboardRef.current || !report) return;
+    setShowExportMenu(false);
+    try {
+      const canvas = await html2canvas(reportDashboardRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#0B0C10',
+        logging: false,
+        windowWidth: 1200
+      });
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `GrowAgent_${new URL(url).hostname}_CRO_Report.png`;
+      a.click();
+    } catch (err) {
+      console.error("PNG export error:", err);
+    }
+  };
+
+  const handleExportJSON = () => {
+    if (!report) return;
+    setShowExportMenu(false);
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `GrowAgent_${new URL(url).hostname}_CRO_Report.json`;
+    a.click();
+  };
+
+  const handleExportCSV = () => {
+    if (!report) return;
+    setShowExportMenu(false);
+    const rows = [['ID', 'Priority', 'Category', 'Issue', 'Recommendation', 'Expected Impact', 'Implementation', 'Checklist Ref']];
+    (report.recommendations || []).forEach(r => {
+      rows.push([r.id, r.priority, r.category, `"${(r.issue || '').replace(/"/g, '""')}"`, `"${(r.recommendation || '').replace(/"/g, '""')}"`, `"${(r.expected_impact || '').replace(/"/g, '""')}"`, `"${(r.implementation || '').replace(/"/g, '""')}"`, `"${(r.checklist_ref || '').replace(/"/g, '""')}"`]);
+    });
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `GrowAgent_${new URL(url).hostname}_Recommendations.csv`;
+    a.click();
+  };
+
+  const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); setShowExportMenu(false); };
   const filteredRecommendations = report?.recommendations?.filter(r => activeTab === 'all' || r.category?.toLowerCase() === activeTab || r.priority?.toLowerCase() === activeTab) || [];
   const [flippedCards, setFlippedCards] = useState({});
   const toggleFlip = (id) => setFlippedCards(prev => ({ ...prev, [id]: !prev[id] }));
@@ -521,6 +630,10 @@ Your job:
     const handleClickOutside = (e) => {
       if (!e.target.closest('.flip-card')) {
         setFlippedCards({});
+      }
+      // Close export menu when clicking outside
+      if (!e.target.closest('[data-export-menu]')) {
+        setShowExportMenu(false);
       }
     };
     document.addEventListener('click', handleClickOutside);
@@ -1082,7 +1195,7 @@ Your job:
             COMPLETE STATE: RESULTS DASHBOARD
         ========================================= */}
         {status === "complete" && report && (
-          <div className={`transition-all duration-700 ${reportUpdatedFlash ? 'scale-[1.01] drop-shadow-[0_0_50px_rgba(242,84,48,0.25)]' : 'scale-100'}`}>
+          <div ref={reportDashboardRef} className={`transition-all duration-700 ${reportUpdatedFlash ? 'scale-[1.01] drop-shadow-[0_0_50px_rgba(242,84,48,0.25)]' : 'scale-100'}`}>
 
             {/* Action Bar & View Toggle */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4 no-print bg-[#1A1D24]/50 p-4 rounded-2xl border border-[#242830] backdrop-blur-md">
@@ -1104,11 +1217,32 @@ Your job:
                 <div className="h-8 w-px bg-[#242830] mx-1"></div>
 
                 <button onClick={() => window.print()} className="flex items-center gap-2 px-5 py-2.5 bg-[#1A1D24] hover:bg-[#242830] border border-[#242830] rounded-xl text-sm font-bold transition-all active:scale-95 shadow-md hover:border-[#9CA3AF]">
-                  <Printer size={16} /> PDF
+                  <Printer size={16} /> Print
                 </button>
-                <button onClick={handleDownload} className="flex items-center gap-2 px-5 py-2.5 bg-[#F25430] hover:bg-[#D94A2A] text-white rounded-xl text-sm font-bold transition-all active:scale-95 shadow-md">
-                  <Download size={16} /> Export
-                </button>
+                <div className="relative" data-export-menu>
+                  <button onClick={() => setShowExportMenu(!showExportMenu)} className="flex items-center gap-2 px-5 py-2.5 bg-[#F25430] hover:bg-[#D94A2A] text-white rounded-xl text-sm font-bold transition-all active:scale-95 shadow-md">
+                    <Download size={16} /> Export ▾
+                  </button>
+                  {showExportMenu && (
+                    <div className="absolute right-0 mt-2 w-48 bg-[#1A1D24] border border-[#242830] rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                      <button onClick={handleExportPDF} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#242830] flex items-center gap-3 transition-colors">
+                        <Download size={14} className="text-[#F25430]" /> PDF Report
+                      </button>
+                      <button onClick={handleExportPNG} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#242830] flex items-center gap-3 transition-colors border-t border-[#242830]">
+                        <Download size={14} className="text-[#4ADE80]" /> PNG Screenshot
+                      </button>
+                      <button onClick={handleDownload} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#242830] flex items-center gap-3 transition-colors border-t border-[#242830]">
+                        <Download size={14} className="text-[#FBBF24]" /> Markdown
+                      </button>
+                      <button onClick={handleExportCSV} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#242830] flex items-center gap-3 transition-colors border-t border-[#242830]">
+                        <Download size={14} className="text-[#9CA3AF]" /> CSV (Recommendations)
+                      </button>
+                      <button onClick={handleExportJSON} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#242830] flex items-center gap-3 transition-colors border-t border-[#242830]">
+                        <Download size={14} className="text-[#6B7280]" /> JSON (Raw Data)
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
