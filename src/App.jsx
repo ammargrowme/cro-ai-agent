@@ -100,84 +100,115 @@ const setSafeLocalStorage = (key, value) => {
   try { localStorage.setItem(key, value); } catch (e) { }
 };
 
-// --- LEARNING SYSTEM ---
-const LEARNINGS_KEY = "growagent_learnings";
-const INSIGHTS_KEY = "growagent_insights";
+// --- LEARNING SYSTEM (Server-Side + Local Fallback) ---
+// Server-side: All users contribute to a shared knowledge base via /api/learnings (Upstash Redis)
+// Local: localStorage is kept as a cache and fallback if the server is unavailable
+const LOCAL_LEARNINGS_KEY = "growagent_learnings";
+const LOCAL_INSIGHTS_KEY = "growagent_insights";
 
-const getLearnings = () => {
+// Local helpers (kept as fallback)
+const getLocalLearnings = () => {
   try {
-    const raw = localStorage.getItem(LEARNINGS_KEY);
+    const raw = localStorage.getItem(LOCAL_LEARNINGS_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch (e) { return []; }
 };
 
-const saveLearning = (auditResult) => {
+const buildLearningEntry = (auditResult) => ({
+  url: auditResult.audit_metadata?.url || "unknown",
+  score: auditResult.overall_score,
+  timestamp: auditResult.audit_metadata?.timestamp || new Date().toISOString(),
+  topIssues: (auditResult.recommendations || []).slice(0, 3).map(r => r.issue),
+  topCategories: (auditResult.recommendations || []).slice(0, 3).map(r => r.category),
+  checklistWeaknesses: Object.entries(auditResult.checklist_scores || {})
+    .filter(([, v]) => v < 50)
+    .map(([k]) => k.replace(/_/g, ' ')),
+  checklistStrengths: Object.entries(auditResult.checklist_scores || {})
+    .filter(([, v]) => v >= 80)
+    .map(([k]) => k.replace(/_/g, ' ')),
+  allChecklistScores: auditResult.checklist_scores || {},
+  criticalFlags: (auditResult.checklist_flags || []).slice(0, 3),
+  feedbackInsights: [],
+  chatModifications: 0
+});
+
+const saveLocalLearning = (auditResult) => {
   try {
-    const learnings = getLearnings();
-    const entry = {
-      url: auditResult.audit_metadata?.url || "unknown",
-      score: auditResult.overall_score,
-      timestamp: auditResult.audit_metadata?.timestamp || new Date().toISOString(),
-      topIssues: (auditResult.recommendations || []).slice(0, 3).map(r => r.issue),
-      topCategories: (auditResult.recommendations || []).slice(0, 3).map(r => r.category),
-      checklistWeaknesses: Object.entries(auditResult.checklist_scores || {})
-        .filter(([, v]) => v < 50)
-        .map(([k]) => k.replace(/_/g, ' ')),
-      checklistStrengths: Object.entries(auditResult.checklist_scores || {})
-        .filter(([, v]) => v >= 80)
-        .map(([k]) => k.replace(/_/g, ' ')),
-      allChecklistScores: auditResult.checklist_scores || {},
-      criticalFlags: (auditResult.checklist_flags || []).slice(0, 3),
-      feedbackInsights: [],
-      chatModifications: 0
-    };
+    const learnings = getLocalLearnings();
+    const entry = buildLearningEntry(auditResult);
     learnings.push(entry);
-    // Keep only last 20 audits
-    const trimmed = learnings.slice(-20);
-    localStorage.setItem(LEARNINGS_KEY, JSON.stringify(trimmed));
+    localStorage.setItem(LOCAL_LEARNINGS_KEY, JSON.stringify(learnings.slice(-20)));
     return entry;
   } catch (e) { return null; }
 };
 
-const addFeedbackInsight = (insight) => {
+const addLocalInsight = (insight) => {
   try {
-    const insights = JSON.parse(localStorage.getItem(INSIGHTS_KEY) || "[]");
+    const insights = JSON.parse(localStorage.getItem(LOCAL_INSIGHTS_KEY) || "[]");
     insights.push({ text: insight, timestamp: new Date().toISOString() });
-    // Keep last 50 insights
-    localStorage.setItem(INSIGHTS_KEY, JSON.stringify(insights.slice(-50)));
-    // Also attach to most recent learning entry
-    const learnings = getLearnings();
-    if (learnings.length > 0) {
-      const last = learnings[learnings.length - 1];
-      if (!last.feedbackInsights) last.feedbackInsights = [];
-      last.feedbackInsights.push(insight);
-      localStorage.setItem(LEARNINGS_KEY, JSON.stringify(learnings));
-    }
+    localStorage.setItem(LOCAL_INSIGHTS_KEY, JSON.stringify(insights.slice(-50)));
   } catch (e) {}
 };
 
-const getPastLearningsForPrompt = () => {
-  try {
-    const learnings = getLearnings();
-    const insights = JSON.parse(localStorage.getItem(INSIGHTS_KEY) || "[]");
-    // Attach global insights to the most recent learning entry for prompt inclusion
-    if (insights.length > 0 && learnings.length > 0) {
-      const last = learnings[learnings.length - 1];
-      const globalInsights = insights.slice(-10).map(i => i.text);
-      last.feedbackInsights = [...new Set([...(last.feedbackInsights || []), ...globalInsights])];
-    }
-    // Return all learnings (backend will aggregate patterns from them)
-    return learnings;
-  } catch (e) { return []; }
+// Server-side learning helpers (fire-and-forget saves, non-blocking)
+const saveServerLearning = (auditResult) => {
+  const entry = buildLearningEntry(auditResult);
+  fetch('/api/learnings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'audit', data: entry })
+  }).catch(() => {}); // Silent fail — localStorage is the backup
 };
 
-// Track when chat modifies the report (increments modification counter for latest audit)
+const saveServerInsight = (insightText, sourceUrl) => {
+  fetch('/api/learnings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'insight', data: { text: insightText, sourceUrl: sourceUrl || "" } })
+  }).catch(() => {}); // Silent fail
+};
+
+const fetchServerLearnings = async () => {
+  try {
+    const res = await fetch('/api/learnings');
+    if (!res.ok) throw new Error("Server learnings unavailable");
+    return await res.json();
+  } catch (e) {
+    return { learnings: [], insights: [], totalLearnings: 0, totalInsights: 0 };
+  }
+};
+
+// Merge local + server learnings, deduplicate by url+timestamp
+const mergeLearnings = (localLearnings, serverData) => {
+  const serverLearnings = serverData.learnings || [];
+  const seen = new Set();
+  const merged = [];
+  // Server learnings first (shared knowledge), then local
+  for (const entry of [...serverLearnings, ...localLearnings]) {
+    const key = `${entry.url}|${entry.timestamp}`;
+    if (!seen.has(key)) { seen.add(key); merged.push(entry); }
+  }
+
+  // Merge insights
+  const localInsights = JSON.parse(localStorage.getItem(LOCAL_INSIGHTS_KEY) || "[]");
+  const serverInsights = (serverData.insights || []).map(i => typeof i === 'string' ? JSON.parse(i) : i);
+  const allInsightTexts = [...new Set([...serverInsights, ...localInsights].map(i => i.text))].slice(-20);
+
+  // Attach insights to the last learning entry for prompt inclusion
+  if (allInsightTexts.length > 0 && merged.length > 0) {
+    merged[merged.length - 1].feedbackInsights = allInsightTexts;
+  }
+
+  return merged;
+};
+
+// Track when chat modifies the report
 const trackChatModification = () => {
   try {
-    const learnings = getLearnings();
+    const learnings = getLocalLearnings();
     if (learnings.length > 0) {
       learnings[learnings.length - 1].chatModifications = (learnings[learnings.length - 1].chatModifications || 0) + 1;
-      localStorage.setItem(LEARNINGS_KEY, JSON.stringify(learnings));
+      localStorage.setItem(LOCAL_LEARNINGS_KEY, JSON.stringify(learnings));
     }
   } catch (e) {}
 };
@@ -306,7 +337,8 @@ function AppContent() {
   const [activeFactIndex, setActiveFactIndex] = useState(0);
 
   const [report, setReport] = useState(null);
-  const [learningCount, setLearningCount] = useState(() => getLearnings().length);
+  const [serverLearnings, setServerLearnings] = useState({ learnings: [], insights: [], totalLearnings: 0, totalInsights: 0 });
+  const [learningCount, setLearningCount] = useState(() => getLocalLearnings().length);
   const [activeTab, setActiveTab] = useState('all');
   const [codePatches, setCodePatches] = useState({});
   const [abTests, setAbTests] = useState({});
@@ -322,6 +354,15 @@ function AppContent() {
   useEffect(() => {
     setSafeLocalStorage("growagent_pagespeed_key", customPageSpeedKey);
   }, [customPageSpeedKey]);
+
+  // Fetch shared server learnings on mount
+  useEffect(() => {
+    fetchServerLearnings().then(data => {
+      setServerLearnings(data);
+      // Total = server global count (all users) + local count
+      setLearningCount(data.totalLearnings + getLocalLearnings().length);
+    });
+  }, []);
 
   // No addLog needed
 
@@ -382,7 +423,7 @@ function AppContent() {
         context: additionalContext,
         competitors: competitors.map(c => c.startsWith('http') ? c : `https://${c}`),
         customPageSpeedKey: customPageSpeedKey.trim(),
-        pastLearnings: getPastLearningsForPrompt()
+        pastLearnings: mergeLearnings(getLocalLearnings(), serverLearnings)
       };
 
       // Interval to update current step based on typical timing
@@ -408,9 +449,14 @@ function AppContent() {
 
       if (realReport) {
         setReport(realReport);
-        // Save to learning system for future audits
-        saveLearning(realReport);
-        setLearningCount(getLearnings().length);
+        // Save to BOTH server (shared) and local (fallback)
+        saveLocalLearning(realReport);
+        saveServerLearning(realReport);
+        // Refresh server learnings count
+        fetchServerLearnings().then(data => {
+          setServerLearnings(data);
+          setLearningCount(data.totalLearnings + getLocalLearnings().length);
+        });
         setCountdown(3);
         setStatus("wrapped_countdown");
       } else {
@@ -437,11 +483,12 @@ function AppContent() {
     const newHistory = [...chatHistory, userMessage];
     setChatHistory(newHistory); setChatInput(""); setIsChatLoading(true);
 
-    // Build rich context for the chat AI
-    const pastData = getPastLearningsForPrompt();
+    // Build rich context for the chat AI (merged local + server learnings)
+    const pastData = mergeLearnings(getLocalLearnings(), serverLearnings);
     const recentPast = pastData.slice(-3);
-    const allInsightsRaw = JSON.parse(localStorage.getItem(INSIGHTS_KEY) || "[]");
-    const uniqueInsights = [...new Set(allInsightsRaw.map(i => i.text))].slice(-10);
+    const localInsightsRaw = JSON.parse(localStorage.getItem(LOCAL_INSIGHTS_KEY) || "[]");
+    const serverInsightTexts = (serverLearnings.insights || []).map(i => typeof i === 'string' ? JSON.parse(i).text : i.text);
+    const uniqueInsights = [...new Set([...serverInsightTexts, ...localInsightsRaw.map(i => i.text)])].slice(-10);
 
     const payload = {
       history: newHistory,
@@ -503,9 +550,10 @@ Your job:
 
       setChatHistory([...newHistory, { role: "model", parts: [{ text: chatMessage }] }]);
 
-      // Capture learning insights from chat
+      // Capture learning insights from chat — save to BOTH server and local
       if (responseData.learning_insight) {
-        addFeedbackInsight(responseData.learning_insight);
+        addLocalInsight(responseData.learning_insight);
+        saveServerInsight(responseData.learning_insight, report?.audit_metadata?.url);
       }
 
       if (responseData.updated_report && JSON.stringify(responseData.updated_report) !== JSON.stringify(report)) {

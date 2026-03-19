@@ -4,12 +4,12 @@
 
 ## Quick Status
 
-- **Version**: 1.3.0 (March 18, 2026)
+- **Version**: 1.4.0 (March 19, 2026)
 - **Live URL**: https://cro-ai-agent.vercel.app/
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
 - **Build status**: Passing (`npx vite build` verified)
-- **All 4 API endpoints**: Confirmed live and responding on Vercel
+- **All 5 API endpoints**: Confirmed (analyze, chat, generateCode, generateABTests, learnings)
 
 ## What This Project Is
 
@@ -46,6 +46,14 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - Learning badge in header shows count of past audits learned
 - All docs updated (CLAUDE.md, README, CHANGELOG, DEVELOPER.md, TODO.md)
 
+### v1.4.0 (March 19, 2026) — Server-Side Learning System
+- Learning system moved from client-only (localStorage) to server-first (Upstash Redis) + local fallback
+- New `api/learnings.js` endpoint: GET returns global learnings, POST saves audits/insights
+- All users contribute to a shared knowledge base — AI gets smarter for everyone
+- Merged learning context: local + server learnings deduplicated and injected into AI prompts
+- Graceful degradation: if Redis is unavailable, app falls back to localStorage
+- Added `@upstash/redis` dependency
+
 ### v1.3.0 (March 18, 2026) — Performance + Competitor Analysis + Security
 - Lazy-loaded html2canvas + jsPDF (~560KB off initial bundle)
 - Competitor analysis fully wired: scrape + 4th AI call + UI population
@@ -76,9 +84,9 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 
 **See `TODO.md` for the full prioritized action plan.** The top 3 items are:
 
-1. **Test v1.3.0 on production** — Run audits at https://cro-ai-agent.vercel.app/ with competitor URLs to verify the new competitor analysis, elapsed timer, export loading states, and error boundary.
-2. **Add `GEMINI_API_KEY` env var to Vercel** — Add the new env var name in Vercel dashboard (Settings > Environment Variables). The code falls back to `VITE_GEMINI_API_KEY` for now.
-3. **Server-side learning persistence** — Move from localStorage-only to Vercel KV or Supabase for cross-device persistence.
+1. **Test v1.4.0 on production** — Run audits at https://cro-ai-agent.vercel.app/ to verify the server-side learning system works (learnings badge increments, data persists across sessions/devices).
+2. **Multi-page crawl** — Add crawl depth option to analyze multiple pages per site.
+3. **Checklist drill-down** — Make checklist category circles clickable to show individual item pass/fail.
 
 ## Architecture
 
@@ -94,12 +102,17 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - `api/generateCode.js` — Generates Tailwind CSS code patches for specific recommendations
 - `api/generateABTests.js` — Generates A/B test copy variations
 
-### Learning System (Client-Side)
-- **localStorage keys**: `growagent_learnings` (past audit summaries), `growagent_insights` (chat-extracted CRO insights)
-- Past learnings are sent to `api/analyze.js` as `pastLearnings` in the request body
-- Chat insights are extracted via the `learning_insight` field in chat responses
-- The system caps at 20 stored audits and 50 insights to prevent bloat
-- Helper functions in App.jsx: `getLearnings()`, `saveLearning()`, `addFeedbackInsight()`, `getPastLearningsForPrompt()`
+### Learning System (Server-Side + Local Fallback)
+- **Server**: Upstash Redis via `api/learnings.js` — shared knowledge base across ALL users
+  - `global:learnings` Redis list (max 100 entries) — condensed audit summaries
+  - `global:insights` Redis list (max 200 entries) — chat-extracted CRO insights
+  - Env vars: `KV_REST_API_URL`, `KV_REST_API_TOKEN` (auto-injected by Vercel KV integration)
+- **Local fallback**: localStorage keys `growagent_learnings` (max 20) and `growagent_insights` (max 50)
+- On app load, server learnings are fetched and merged with local data (deduplicated by URL+timestamp)
+- After each audit, data is saved to BOTH server and localStorage
+- Chat insights are saved to BOTH server and localStorage
+- If server is unavailable, app gracefully degrades to localStorage-only
+- Helper functions in App.jsx: `getLocalLearnings()`, `saveLocalLearning()`, `saveServerLearning()`, `saveServerInsight()`, `fetchServerLearnings()`, `mergeLearnings()`
 
 ## CRO Checklist
 
@@ -219,6 +232,7 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 ├── api/
 │   ├── analyze.js          # Main audit pipeline (scrape + PageSpeed + 3 AI calls)
 │   ├── chat.js             # Interactive chat endpoint (message + report updates + learning)
+│   ├── learnings.js        # Server-side learning persistence (Upstash Redis GET/POST)
 │   ├── generateCode.js     # Code patch generator (Tailwind CSS)
 │   └── generateABTests.js  # A/B copy variation generator
 ├── src/
@@ -247,7 +261,7 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 5. **API keys must stay server-side** — never expose in frontend code
 6. **Keep App.jsx as a single file** — do not split into components (project convention)
 7. **Test builds with `npx vite build`** before committing
-8. **The learning system is client-side only** — no server persistence yet
+8. **The learning system is server-side (Upstash Redis) + local fallback** — requires `KV_REST_API_URL` and `KV_REST_API_TOKEN` env vars
 9. **Always read TODO.md** before starting new work — it has the prioritized plan
 10. **Auto-deploy is on** — every push to `main` goes live at https://cro-ai-agent.vercel.app/
 11. **The CRO checklist source doc** is at Google Doc ID `1kRqHJ7vshj6-55S7cd9tq-M-xyf4LiCCuBikeBB3pS0` — if the checklist needs updating, fetch this doc

@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-03-18 (v1.3.0)
+**Last updated**: 2026-03-19 (v1.4.0)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 
@@ -123,15 +123,8 @@ These features are implemented but need real-world testing with a Gemini API key
 
 ### Phase 2 — High Value
 
-#### 4. Server-Side Learning Persistence
-**Status**: Learning is localStorage only — lost when user clears browser data or switches devices.
-**What to do**:
-- Option A: Use Vercel KV (simple key-value store, free tier available)
-- Option B: Use Supabase (better if auth is planned later)
-- Create `api/learnings.js` endpoint with GET (load) and POST (save)
-- Add a simple user identifier (random UUID stored in localStorage, sent with requests)
-- On app load, fetch learnings from server and merge with local
-- After each audit, POST the new learning to the server
+#### 4. ~~Server-Side Learning Persistence~~ ✅ DONE (v1.4.0)
+**Status**: Completed. Learnings are now saved to Upstash Redis via `/api/learnings` endpoint. All users contribute to a shared knowledge base. localStorage kept as fallback.
 
 #### 5. Multi-Page Crawl
 **Status**: Only analyzes a single URL per audit.

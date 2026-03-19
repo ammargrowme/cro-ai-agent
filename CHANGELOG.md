@@ -2,6 +2,19 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.4.0] - 2026-03-19
+### Added
+- **Server-Side Learning System**: All audits and chat insights are now saved to a shared Upstash Redis database via the new `/api/learnings` endpoint. Every user's audit contributes to a global knowledge base that makes the AI smarter for everyone.
+- **New API Endpoint (`api/learnings.js`)**: GET returns global learnings + insights with counts; POST saves new audit summaries or chat insights with input validation.
+- **Graceful Degradation**: If the server is unavailable, the app falls back to localStorage-only learning (previous behavior). No functionality is lost.
+- **Merged Learning Context**: AI prompts now receive merged local + server learnings, deduplicated by URL+timestamp, for richer pattern detection across all users.
+- **Global Learning Count**: Header badge now shows total learnings from all users (server) plus local history.
+
+### Changed
+- **Learning System Architecture**: Moved from client-only (localStorage) to server-first (Upstash Redis) + local fallback. localStorage keys renamed from `growagent_learnings` to `growagent_learnings` (same key, backward compatible).
+- **Dependencies**: Added `@upstash/redis` for server-side Redis persistence. Removed deprecated `@vercel/kv`.
+- **`.env.example`**: Added `KV_REST_API_URL` and `KV_REST_API_TOKEN` environment variable documentation.
+
 ## [1.3.0] - 2026-03-18
 ### Added
 - **Competitor Analysis (Live)**: Competitor URLs are now scraped in parallel during Phase 1 and analyzed via a 4th AI call in Phase 2. The `competitor_analysis` field is now fully populated with CRO-focused comparisons.

@@ -4,6 +4,52 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 6: v1.4.0 — March 19, 2026
+
+**Goal**: Move the learning system from client-only (localStorage) to server-first (Upstash Redis) so that ALL users contribute to a shared knowledge base. The AI should get smarter for everyone, not just individual users.
+
+### What Was Built
+
+1. **New API Endpoint: `api/learnings.js`**
+   - GET `/api/learnings` — Returns the most recent 20 audit summaries and 30 insights from the global Redis store, plus total counts
+   - POST `/api/learnings` — Saves a new audit summary or chat insight with input validation (type, URL, score range, text length)
+   - Uses `@upstash/redis` client (Vercel KV is deprecated, now Upstash)
+   - Redis `RPUSH` + `LTRIM` for atomic append-and-cap (solves concurrent writes)
+   - Graceful degradation: returns empty data on Redis failure (never blocks the app)
+
+2. **Modified `src/App.jsx` Learning System**
+   - Refactored all learning functions: `getLocalLearnings()`, `saveLocalLearning()`, `buildLearningEntry()`, `addLocalInsight()` (local), `saveServerLearning()`, `saveServerInsight()`, `fetchServerLearnings()` (server), `mergeLearnings()` (combiner)
+   - Added `serverLearnings` React state + `useEffect` to fetch on mount
+   - Audit completion saves to BOTH server and localStorage (fire-and-forget for server)
+   - Chat insights saved to BOTH server and localStorage
+   - `mergeLearnings()` deduplicates by URL+timestamp, merges insights from both sources
+   - Learning badge now shows combined count (server total + local count)
+
+3. **Documentation**: Updated all 6 required files (CLAUDE.md, TODO.md, CHANGELOG.md, DEVELOPER.md, README.md, IMPLEMENTATION_RECAP.md)
+
+### Key Design Decisions
+- **Upstash Redis over Vercel Postgres**: Sub-millisecond latency, atomic list operations, no schema migrations, free tier sufficient
+- **Fire-and-forget saves**: Server saves don't block the UI. If Redis is slow/down, user experience is unaffected
+- **No user authentication**: Anonymous system — all learnings are shared globally. A future auth system can add per-user filtering
+- **localStorage kept as fallback**: Existing users' data still works; no migration needed
+
+### Files Changed
+- `api/learnings.js` — **NEW** (server-side learning endpoint)
+- `src/App.jsx` — Refactored learning system functions, added server state + fetch
+- `package.json` — Added `@upstash/redis` dependency
+- `.env.example` — Added Redis env var documentation
+- All 6 documentation files updated
+
+### Verification
+- Build: `npx vite build` passes ✅
+- Frontend bundle unchanged (server code doesn't affect client bundle)
+
+### Deployment Notes
+- Requires `KV_REST_API_URL` and `KV_REST_API_TOKEN` env vars (auto-injected by Vercel KV/Upstash integration)
+- Redis ID: `eca5b31c-7c19-4027-8cd4-d9f5973118aa`
+
+---
+
 ## Session 4: v1.2.1 — March 18, 2026
 
 **Goal**: Make the learning system significantly smarter, improve chat reliability and insight extraction, fix known bugs (print CSS, chat errors, dead code), and ensure all documentation is comprehensive enough for cold-start AI handoff.

@@ -62,14 +62,15 @@ GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) au
 
 ## The Learning System
 
-GROWAGENT gets smarter with every audit:
+GROWAGENT gets smarter with every audit — and **every user makes it smarter for everyone**:
 
-1. **Audit Memory**: After each audit, comprehensive results are saved — scores, issues, checklist strengths AND weaknesses, critical flags, and modification history.
-2. **Pattern Detection**: The system tracks recurring checklist weaknesses across ALL past audits. If "CTA Focus" fails in 4 out of 6 audits, the AI will flag it as a systemic pattern and prioritize it.
-3. **Chat Insights**: When you discuss recommendations in the AI chat, the system proactively extracts reusable CRO insights (e.g., "Sites without sticky CTA lose 20-30% mobile conversions"). These insights are applied to ALL future audits.
-4. **Feedback Loop**: Tell the AI "we already fixed this" or "we're a B2B company" — it adapts future recommendations and stores the context for next time.
-5. **Future Injection**: Past learnings, recurring patterns, and accumulated insights are all automatically included in future AI prompts.
-6. **Learning Indicator**: The header shows how many past audits the system has learned from.
+1. **Shared Knowledge Base**: All audits and chat insights are saved to a server-side database (Upstash Redis). When anyone runs an audit, the AI draws on learnings from ALL past users — not just yours.
+2. **Pattern Detection**: The system tracks recurring checklist weaknesses across ALL audits from all users. If "CTA Focus" fails across many sites, the AI will flag it as a systemic pattern and prioritize it.
+3. **Chat Insights**: When you discuss recommendations in the AI chat, the system proactively extracts reusable CRO insights (e.g., "Sites without sticky CTA lose 20-30% mobile conversions"). These insights are applied to ALL future audits for everyone.
+4. **Feedback Loop**: Tell the AI "we already fixed this" or "we're a B2B company" — it adapts future recommendations and stores the context for future audits.
+5. **Future Injection**: Past learnings, recurring patterns, and accumulated insights from all users are automatically included in future AI prompts.
+6. **Learning Indicator**: The header shows how many total audits the system has learned from (your audits + all other users).
+7. **Graceful Fallback**: If the server is unavailable, the app seamlessly falls back to local-only storage — no functionality is lost.
 
 ---
 
@@ -144,7 +145,7 @@ Key rules:
 - [ ] Actually scrape and analyze competitor URLs
 - [ ] PDF export with proper library
 - [ ] Multi-page crawl (Scan entire funnel)
-- [ ] Server-side learning persistence
+- [x] Server-side learning persistence (Upstash Redis — v1.4.0)
 - [ ] User authentication & Report history
 - [ ] Deep-link integration with Shopify/WooCommerce
 

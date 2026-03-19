@@ -43,27 +43,34 @@ All three results are merged into a single report object with `audit_metadata` a
 
 ## The Learning System
 
-### Storage Architecture
+### Storage Architecture (Server-Side + Local Fallback)
 ```
-localStorage
-├── growagent_learnings     # Array of past audit summaries (max 20)
+Upstash Redis (via api/learnings.js)
+├── global:learnings        # Redis List of audit summaries from ALL users (max 100)
 │   └── { url, score, timestamp, topIssues[], topCategories[], checklistWeaknesses[],
-│          checklistStrengths[], allChecklistScores{}, criticalFlags[], feedbackInsights[],
-│          chatModifications: number }
-├── growagent_insights      # Array of chat-extracted CRO insights (max 50)
+│          checklistStrengths[], allChecklistScores{}, criticalFlags[] }
+└── global:insights         # Redis List of chat-extracted CRO insights from ALL users (max 200)
+    └── { text, timestamp, sourceUrl }
+
+localStorage (local fallback)
+├── growagent_learnings     # Array of THIS user's past audit summaries (max 20)
+│   └── { ...same shape as server, plus feedbackInsights[], chatModifications: number }
+├── growagent_insights      # Array of THIS user's chat-extracted CRO insights (max 50)
 │   └── { text, timestamp }
 └── growagent_pagespeed_key # User's custom PageSpeed API key
 ```
 
 ### Data Flow
-1. **After each audit**: `saveLearning()` extracts comprehensive data from the report — scores, issues, categories, checklist strengths AND weaknesses, all checklist scores, critical flags.
-2. **During chat**: If the AI returns a `learning_insight`, `addFeedbackInsight()` stores it. If chat modifies the report, `trackChatModification()` increments the counter.
-3. **Before each audit**: `getPastLearningsForPrompt()` retrieves ALL past audits (with attached insights) and sends them in the API request body.
-4. **In the AI prompt**: The backend builds a 3-part learning context:
-   - **Individual audit history** (most recent 5 with details)
-   - **Aggregate pattern detection** — counts recurring checklist weaknesses across ALL past audits, flags any that appear in 2+ audits
-   - **Accumulated insights** — deduplicated user feedback from past chat conversations
-5. **Pattern flagging**: If "cta focus" failed in 4/6 past audits, the AI is told to prioritize CTA issues and call out the pattern explicitly.
+1. **On app load**: `fetchServerLearnings()` retrieves the shared global knowledge base from Upstash Redis.
+2. **After each audit**: `saveLocalLearning()` saves to localStorage AND `saveServerLearning()` saves to Redis (fire-and-forget). This means every user's audit contributes to the shared knowledge.
+3. **During chat**: If the AI returns a `learning_insight`, it's saved to BOTH `addLocalInsight()` and `saveServerInsight()`.
+4. **Before each audit**: `mergeLearnings()` combines local + server learnings (deduplicated by URL+timestamp) and sends them as `pastLearnings` in the API request body.
+5. **In the AI prompt**: The backend builds a 3-part learning context:
+   - **Individual audit history** (most recent 5 from merged data)
+   - **Aggregate pattern detection** — counts recurring checklist weaknesses across ALL past audits from all users
+   - **Accumulated insights** — deduplicated CRO insights from all users' chat conversations
+6. **Pattern flagging**: If "cta focus" failed in 4/6 past audits across any user, the AI is told to prioritize CTA issues.
+7. **Graceful degradation**: If Redis is unavailable, the app silently falls back to localStorage-only (previous behavior).
 
 ## CRO Checklist
 
@@ -115,7 +122,7 @@ The full GrowMe Basic Website Standards checklist is embedded as a string consta
 
 ### Key Behaviors
 - If `updated_report` is non-null and different from current report, the dashboard updates live with a flash animation. `trackChatModification()` is called.
-- If `learning_insight` is non-null, it's stored via `addFeedbackInsight()` for future audits.
+- If `learning_insight` is non-null, it's stored via `addLocalInsight()` + `saveServerInsight()` for future audits.
 - JSON parse failures fall back to treating raw text as the message.
 - On error, the message gets `_error: true` flag and a "Retry" button is rendered.
 - The chat AI has 10 detailed rules including: proactive insight extraction, citing exact scores, adapting to industry/audience, and explaining reasoning before replacing recommendations.
@@ -130,10 +137,9 @@ If you are an AI assistant working on this codebase:
 4. **Animations**: CSS keyframes only. No Framer Motion.
 5. **Node Compatibility**: Pinned to Vite 5 for Node 18 support.
 6. **Test builds**: Always run `npx vite build` before committing.
-7. **Learning system**: Client-side localStorage only. No server persistence yet.
+7. **Learning system**: Server-side (Upstash Redis) + localStorage fallback. Requires `KV_REST_API_URL` and `KV_REST_API_TOKEN` env vars.
 
 ## Future Integrations
-- **Server-side Learning**: Vercel KV or Supabase for cross-device learning persistence.
 - **WebSockets**: Real-time streaming for report generation progress.
 - **Vector DB**: Storing CRO best practices for benchmarked industry scores.
 - **Competitor Scraping**: Actually scrape and analyze competitor URLs (currently accepted but not used).
