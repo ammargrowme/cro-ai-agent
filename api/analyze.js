@@ -103,7 +103,7 @@ const sanitizeHtml = (rawHtml) => {
     .substring(0, 25000);
 };
 
-const callGemini = async (logId, promptText, imageParts, schema, maxTokens = 4096) => {
+const callGemini = async (logId, promptText, imageParts, schema, maxTokens = 8192) => {
   const model = "gemini-2.5-flash";
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -115,7 +115,12 @@ const callGemini = async (logId, promptText, imageParts, schema, maxTokens = 409
       responseMimeType: "application/json",
       responseSchema: schema,
       temperature: 0.2,
-      maxOutputTokens: maxTokens
+      maxOutputTokens: maxTokens,
+      // Gemini 2.5 Flash: thinking tokens count against maxOutputTokens.
+      // Set a thinking budget to ensure enough tokens remain for the actual JSON output.
+      thinkingConfig: {
+        thinkingBudget: Math.min(2048, Math.floor(maxTokens * 0.4))
+      }
     }
   };
 
@@ -132,20 +137,47 @@ const callGemini = async (logId, promptText, imageParts, schema, maxTokens = 409
   }
 
   const result = await response.json();
-  const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+  const finishReason = result.candidates?.[0]?.finishReason;
+  const text = result.candidates?.[0]?.content?.parts?.[0]?.text
+    // Gemini 2.5 may return thinking text in earlier parts — grab the last text part
+    || result.candidates?.[0]?.content?.parts?.filter(p => p.text)?.pop()?.text;
 
   if (!text) {
-    console.error(`[${logId}] Gemini returned no text. Finish reason: ${result.candidates?.[0]?.finishReason}`);
+    console.error(`[${logId}] Gemini returned no text. Finish reason: ${finishReason}`);
     throw new Error("AI returned empty response");
   }
 
-  console.log(`[${logId}] Gemini raw length: ${text.length} chars`);
+  console.log(`[${logId}] Gemini raw length: ${text.length} chars | Finish: ${finishReason}`);
+
+  // Warn if truncated
+  if (finishReason === 'MAX_TOKENS') {
+    console.warn(`[${logId}] ⚠️ Response was TRUNCATED (MAX_TOKENS). Attempting partial parse...`);
+  }
 
   try {
     return JSON.parse(text);
   } catch (e) {
     const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
     try { return JSON.parse(cleaned); } catch (e2) {}
+
+    // Attempt to salvage truncated JSON by closing brackets
+    try {
+      let salvaged = cleaned;
+      // Count open vs close braces/brackets
+      const openBraces = (salvaged.match(/\{/g) || []).length;
+      const closeBraces = (salvaged.match(/\}/g) || []).length;
+      const openBrackets = (salvaged.match(/\[/g) || []).length;
+      const closeBrackets = (salvaged.match(/\]/g) || []).length;
+      // Remove trailing comma if present
+      salvaged = salvaged.replace(/,\s*$/, '');
+      // Close any unclosed brackets/braces
+      for (let i = 0; i < openBrackets - closeBrackets; i++) salvaged += ']';
+      for (let i = 0; i < openBraces - closeBraces; i++) salvaged += '}';
+      const parsed = JSON.parse(salvaged);
+      console.log(`[${logId}] ✅ Salvaged truncated JSON successfully`);
+      return parsed;
+    } catch (e3) {}
+
     console.error(`[${logId}] JSON parse failed. Preview: ${text.substring(0, 300)}`);
     throw new Error("AI returned unparseable response");
   }
@@ -414,16 +446,30 @@ ${siteContext}
 ${mainHtml.substring(0, 12000)}`;
 
       const t = Date.now();
-      const result = await callGemini(logId, prompt, imageParts, CHECKLIST_SCHEMA, 2048);
+      const result = await callGemini(logId, prompt, imageParts, CHECKLIST_SCHEMA, 8192);
       console.log(`[${logId}] [PHASE 2] Checklist done in ${Date.now() - t}ms.`);
       return result;
     })();
 
-    const [overview, recs, checklist] = await Promise.all([overviewPromise, recsPromise, checklistPromise]);
+    // Use Promise.allSettled so one failing call doesn't crash the entire audit
+    const [overviewResult, recsResult, checklistResult] = await Promise.allSettled([overviewPromise, recsPromise, checklistPromise]);
+
+    const overview = overviewResult.status === 'fulfilled' ? overviewResult.value : { overall_score: 0, summary: "Overview generation failed — please retry.", strengths: [], quick_wins: [] };
+    const recs = recsResult.status === 'fulfilled' ? recsResult.value : { recommendations: [] };
+    const checklist = checklistResult.status === 'fulfilled' ? checklistResult.value : { checklist_scores: {}, checklist_flags: ["Checklist scoring failed — please retry the audit."] };
+
+    if (overviewResult.status === 'rejected') console.error(`[${logId}] Overview FAILED: ${overviewResult.reason?.message}`);
+    if (recsResult.status === 'rejected') console.error(`[${logId}] Recommendations FAILED: ${recsResult.reason?.message}`);
+    if (checklistResult.status === 'rejected') console.error(`[${logId}] Checklist FAILED: ${checklistResult.reason?.message}`);
 
     // ══════════════════════════════════════════════════
     // PHASE 3: Merge & Deliver
     // ══════════════════════════════════════════════════
+
+    // Ensure all 10 checklist categories have a value (fill missing with 0)
+    const defaultScores = { seo_alignment: 0, above_the_fold: 0, cta_focus: 0, content_structure: 0, visual_hierarchy: 0, mobile_optimization: 0, trust_proof: 0, forms_interaction: 0, performance_qa: 0, content_standards: 0 };
+    const mergedChecklistScores = { ...defaultScores, ...(checklist.checklist_scores || {}) };
+
     const report = {
       overall_score: overview.overall_score,
       summary: overview.summary,
@@ -431,7 +477,7 @@ ${mainHtml.substring(0, 12000)}`;
       quick_wins: overview.quick_wins || [],
       recommendations: recs.recommendations || [],
       competitor_analysis: { overview: "", comparisons: [] },
-      checklist_scores: checklist.checklist_scores || {},
+      checklist_scores: mergedChecklistScores,
       checklist_flags: checklist.checklist_flags || [],
       audit_metadata: {
         url: url,
