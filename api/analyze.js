@@ -104,7 +104,7 @@ const sanitizeHtml = (rawHtml) => {
 };
 
 const callGemini = async (logId, promptText, imageParts, schema, maxTokens = 8192) => {
-  const model = "gemini-2.5-flash";
+  const model = "gemini-3-flash-preview";
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const parts = [{ text: promptText }, ...imageParts];

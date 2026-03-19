@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   const { history, systemInstruction } = req.body;
 
   try {
-    const model = "gemini-2.5-flash";
+    const model = "gemini-3-flash-preview";
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const fullSystemInstruction = `${systemInstruction}
