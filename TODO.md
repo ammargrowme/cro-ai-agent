@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-03-19 (v1.4.0)
+**Last updated**: 2026-03-19 (v1.5.0)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 

@@ -2,6 +2,23 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.5.0] - 2026-03-19
+### Changed
+- **Visual Refresh**: Complete UI overhaul with deeper, more refined dark theme
+- **Glassmorphism Design System**: New `.glass-card` class with frosted-glass effects, subtle backdrop blur, and semi-transparent borders across all panels (dashboard, chat, checklist, competitor analysis)
+- **Color Palette Refined**: Deeper base (`#08090D`), softer surfaces (`#12151B`), muted text (`#8B95A5`), refined green accent (`#34D399`) — less harsh, more professional
+- **Hero Section Redesign**: Floating animated orb, gradient text animation, improved typography hierarchy, better spacing
+- **Input Form Polish**: Thinner gradient border, refined button with gradient + inner shadow, smaller touch targets for cleaner look
+- **Loading Screen Refined**: Cleaner progress indicators, subtle glow-pulse animation on spinner, tighter step layout
+- **Header Upgraded**: Frosted glass navbar with `saturate(180%)`, gradient logo icon, responsive learning badge
+- **Chat Terminal Glass Effect**: Message bubbles with semi-transparent backgrounds and blur, frosted input area
+- **Score Circle Gradient**: SVG `<linearGradient>` stroke on the Growth Score circle for a polished look
+- **Noise Texture Overlay**: Subtle SVG noise at 1.5% opacity for depth and tactile feel
+- **New Animations**: `animate-float`, `animate-glow-pulse`, `animate-gradient` (gradient shift), `border-glow`
+- **Accessibility**: Added `prefers-reduced-motion` media query — disables all animations for users who prefer reduced motion
+- **Smooth Scroll**: Added `html { scroll-behavior: smooth }` globally
+- **Custom Scrollbar Refined**: Thinner (5px), semi-transparent rgba colors
+
 ## [1.4.0] - 2026-03-19
 ### Added
 - **Server-Side Learning System**: All audits and chat insights are now saved to a shared Upstash Redis database via the new `/api/learnings` endpoint. Every user's audit contributes to a global knowledge base that makes the AI smarter for everyone.

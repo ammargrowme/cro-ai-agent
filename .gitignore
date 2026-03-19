@@ -25,3 +25,4 @@ dist-ssr
 .env
 *.pdf
 GrowAgent_*.md
+.vercel

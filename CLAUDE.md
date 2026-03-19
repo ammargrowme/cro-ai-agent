@@ -4,7 +4,7 @@
 
 ## Quick Status
 
-- **Version**: 1.4.0 (March 19, 2026)
+- **Version**: 1.5.0 (March 19, 2026)
 - **Live URL**: https://cro-ai-agent.vercel.app/
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
