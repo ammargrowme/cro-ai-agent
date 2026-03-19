@@ -20,8 +20,11 @@ Queries the Google PageSpeed Insights V5 API with a 90-second timeout.
 - **Key Fallback**: Uses custom PageSpeed key if provided, otherwise falls back to the Gemini API key.
 - **Graceful Degradation**: If PageSpeed fails (rate limit, timeout), the audit continues in "HTML-only" mode.
 
-### Phase 2: AI Analysis (3 Parallel Calls)
-Three Gemini 2.5 Flash calls run simultaneously, all using the same scraped HTML and screenshot:
+### Phase 1c. Additional Page Scraping (when batch pages provided)
+Scrapes up to 4 additional pages from the same site in parallel alongside the main URL and competitors.
+
+### Phase 2: AI Analysis (3-5 Parallel Calls)
+Three to five Gemini calls run simultaneously, all using the same scraped HTML and screenshot:
 
 #### 2a. Overview Call
 - Produces: `overall_score`, `summary`, `strengths`, `quick_wins`
@@ -38,8 +41,18 @@ Three Gemini 2.5 Flash calls run simultaneously, all using the same scraped HTML
 - Uses 12K HTML context
 - Lower token limit (2048) since output is compact
 
+#### 2d. Competitor Analysis Call (when competitors provided)
+- Produces: `competitor_analysis` with `overview`, `comparisons[]` (each with `competitor_scores` for all 10 categories and `steal_worthy` ideas)
+- Uses both main site HTML and competitor HTML for direct comparison
+- Enhanced in v1.6.0 with comparison matrix data and actionable steal-worthy ideas
+
+#### 2e. Per-Page Scoring Call (when additional pages provided)
+- Produces: `page_scores[]` with `url`, `page_type`, `overall_score`, `top_issues[]` per page
+- Analyzes each additional page's HTML independently
+- Added in v1.6.0 for multi-page site analysis
+
 ### Phase 3: Merge & Deliver
-All three results are merged into a single report object with `audit_metadata` attached.
+All results are merged into a single report object with `audit_metadata` attached.
 
 ## The Learning System
 

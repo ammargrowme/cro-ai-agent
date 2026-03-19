@@ -23,7 +23,10 @@ GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) au
 - **CRO Checklist Audit**: Scores websites against a 50+ criteria professional checklist across 10 categories.
 - **Adaptive Learning System**: Gets smarter with every audit — detects recurring patterns across audits, extracts insights from chat feedback, and applies accumulated knowledge to future analysis.
 - **Secure Backend Proxy**: All API calls are routed through Vercel Serverless Functions to protect sensitive API keys.
-- **Priority-Based Strategy**: Generates 6 High, Medium, and Low priority recommendations mapped to checklist items.
+- **Enhanced Competitor Analysis**: Side-by-side comparison matrix with per-category scores and steal-worthy ideas from competitors.
+- **Multi-Page Analysis**: Analyze up to 5 pages per site with individual scores, page type detection, and per-page top issues.
+- **Target Keywords**: Specify SEO keywords for alignment verification across all AI analysis.
+- **Priority-Based Strategy**: Generates prioritized recommendations mapped to checklist items.
 - **Developer Handoff**: Each recommendation includes an AI-generated **Code Patch** (HTML/Tailwind) and **A/B Test Variations**.
 - **Interactive Chat**: A real-time AI Strategist terminal that can update the live dashboard and extract reusable CRO insights.
 
@@ -142,10 +145,12 @@ Key rules:
 ---
 
 ## Roadmap
-- [ ] Actually scrape and analyze competitor URLs
-- [ ] PDF export with proper library
-- [ ] Multi-page crawl (Scan entire funnel)
+- [x] Competitor analysis with comparison matrix (v1.6.0)
+- [x] Multi-page batch analysis (v1.6.0)
+- [x] Target keywords for SEO alignment (v1.6.0)
 - [x] Server-side learning persistence (Upstash Redis — v1.4.0)
+- [ ] Checklist drill-down (clickable category details)
+- [ ] Auto-crawl mode (discover pages automatically)
 - [ ] User authentication & Report history
 - [ ] Deep-link integration with Shopify/WooCommerce
 

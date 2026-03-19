@@ -269,13 +269,55 @@ const COMPETITOR_SCHEMA = {
         properties: {
           competitor: { type: "string", description: "Competitor domain name" },
           difference: { type: "string", description: "Key CRO difference vs the target site. MAX 30 words." },
-          advantage: { type: "string", description: "Target site's strategic advantage over this competitor. MAX 25 words." }
+          advantage: { type: "string", description: "Target site's strategic advantage over this competitor. MAX 25 words." },
+          steal_worthy: {
+            type: "array",
+            description: "2-3 specific, actionable ideas to steal from this competitor. Each MAX 20 words.",
+            items: { type: "string" }
+          },
+          competitor_scores: {
+            type: "object",
+            description: "Score this competitor on the same 10 checklist categories (0-100).",
+            properties: {
+              seo_alignment: { type: "number" },
+              above_the_fold: { type: "number" },
+              cta_focus: { type: "number" },
+              content_structure: { type: "number" },
+              visual_hierarchy: { type: "number" },
+              mobile_optimization: { type: "number" },
+              trust_proof: { type: "number" },
+              forms_interaction: { type: "number" },
+              performance_qa: { type: "number" },
+              content_standards: { type: "number" }
+            },
+            required: ["seo_alignment", "above_the_fold", "cta_focus", "content_structure", "visual_hierarchy", "mobile_optimization", "trust_proof", "forms_interaction", "performance_qa", "content_standards"]
+          }
         },
-        required: ["competitor", "difference", "advantage"]
+        required: ["competitor", "difference", "advantage", "steal_worthy", "competitor_scores"]
       }
     }
   },
   required: ["overview", "comparisons"]
+};
+
+const PER_PAGE_SCHEMA = {
+  type: "object",
+  properties: {
+    page_scores: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          page_type: { type: "string", description: "E.g., Homepage, Pricing, About, Contact, Service, Blog" },
+          overall_score: { type: "number", description: "CRO score 0-100 for this specific page" },
+          top_issues: { type: "array", items: { type: "string" }, description: "Top 3 CRO issues for this page. Each MAX 15 words." }
+        },
+        required: ["url", "page_type", "overall_score", "top_issues"]
+      }
+    }
+  },
+  required: ["page_scores"]
 };
 
 // ─── MAIN HANDLER ──────────────────────────────────────────
@@ -283,7 +325,7 @@ const COMPETITOR_SCHEMA = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-  const { url, context, competitors, customPageSpeedKey, pastLearnings } = req.body;
+  const { url, context, competitors, customPageSpeedKey, pastLearnings, targetKeywords, additionalPages } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
   // Validate URL format
@@ -348,6 +390,23 @@ export default async function handler(req, res) {
       return data;
     })();
 
+    // Scrape additional site pages in parallel (max 4)
+    const additionalPagePromises = (additionalPages || []).slice(0, 4).map(async (pageUrl) => {
+      try {
+        const t = Date.now();
+        const pageRes = await fetch(pageUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          signal: AbortSignal.timeout(15000)
+        });
+        const html = sanitizeHtml(await pageRes.text());
+        console.log(`[${logId}] [PHASE 1] Page scrape OK (${pageUrl}): ${html.length} chars in ${Date.now() - t}ms`);
+        return { url: pageUrl, html };
+      } catch (err) {
+        console.warn(`[${logId}] [PHASE 1] Page scrape FAIL (${pageUrl}): ${err.message}`);
+        return { url: pageUrl, html: "" };
+      }
+    });
+
     // Scrape competitors in parallel with main site
     const competitorPromises = (competitors || []).slice(0, 2).map(async (compUrl) => {
       try {
@@ -365,9 +424,14 @@ export default async function handler(req, res) {
       }
     });
 
-    const [mainHtml, pageSpeedData, ...competitorData] = await Promise.all([scrapePromise, pageSpeedPromise, ...competitorPromises]);
+    const allPhase1 = await Promise.all([scrapePromise, pageSpeedPromise, ...additionalPagePromises, ...competitorPromises]);
+    const mainHtml = allPhase1[0];
+    const pageSpeedData = allPhase1[1];
+    const additionalPageData = allPhase1.slice(2, 2 + (additionalPages || []).slice(0, 4).length);
+    const competitorData = allPhase1.slice(2 + (additionalPages || []).slice(0, 4).length);
+    const validPages = additionalPageData.filter(p => p.html.length > 0);
     const validCompetitors = competitorData.filter(c => c.html.length > 0);
-    console.log(`[${logId}] [PHASE 1 DONE] ${Date.now() - globalStart}ms elapsed | Competitors scraped: ${validCompetitors.length}/${competitorData.length}`);
+    console.log(`[${logId}] [PHASE 1 DONE] ${Date.now() - globalStart}ms elapsed | Pages: ${validPages.length}/${additionalPageData.length} | Competitors: ${validCompetitors.length}/${competitorData.length}`);
 
     // ══════════════════════════════════════════════════
     // PHASE 2: Three AI calls IN PARALLEL
@@ -419,8 +483,20 @@ ${uniqueInsights.map(i => `- ${i}`).join('\n')}
 INSTRUCTIONS: Compare this site against past patterns. If you see the SAME weaknesses recurring, call it out explicitly ("This is a pattern we've seen across multiple sites — prioritize fixing X"). Give more specific, nuanced advice based on accumulated knowledge.`;
     }
 
-    const siteContext = `URL: ${url}\nPageSpeed: ${pageSpeedData.scoreText}\nUser Goals: ${context || "N/A"}`;
-    console.log(`[${logId}] [PHASE 2] Launching 3 AI calls in parallel... Image: ${imageParts.length > 0 ? 'Yes' : 'No'} | Learnings: ${pastLearnings?.length || 0}`);
+    // Build keyword context
+    const keywordContext = targetKeywords ? `\nTARGET KEYWORDS: ${targetKeywords}\nCheck if these keywords appear in: H1, H2s, meta title, meta description, hero text, alt tags. Score keyword alignment based on actual presence vs absence.` : "";
+
+    // Build multi-page context
+    const multiPageContext = validPages.length > 0 ? `\n\n[MULTI-PAGE SITE AUDIT — Analyzing ${1 + validPages.length} pages from the same site]:
+PRIMARY PAGE: ${url}
+${validPages.map(p => {
+      const hostname = (() => { try { return new URL(p.url).pathname; } catch { return p.url; } })();
+      return `ADDITIONAL PAGE (${hostname}):\n${p.html.substring(0, 6000)}`;
+    }).join('\n\n')}
+→ Provide a SITE-WIDE assessment. Note patterns across pages (e.g., missing CTAs site-wide, inconsistent trust signals).` : "";
+
+    const siteContext = `URL: ${url}\nPageSpeed: ${pageSpeedData.scoreText}\nUser Goals: ${context || "N/A"}${keywordContext}`;
+    console.log(`[${logId}] [PHASE 2] Launching AI calls in parallel... Image: ${imageParts.length > 0 ? 'Yes' : 'No'} | Learnings: ${pastLearnings?.length || 0} | Keywords: ${targetKeywords ? 'Yes' : 'No'} | Extra pages: ${validPages.length}`);
 
     const overviewPromise = (async () => {
       const prompt = `You are an Elite CRO Director with deep expertise in conversion optimization. Analyze this website data and screenshot.
@@ -438,7 +514,7 @@ ${learningContext}
 ${siteContext}
 
 [HTML STRUCTURE]:
-${mainHtml}`;
+${mainHtml}${multiPageContext}`;
 
       const t = Date.now();
       const result = await callGemini(logId, prompt, imageParts, OVERVIEW_SCHEMA);
@@ -465,7 +541,7 @@ ${learningContext}
 ${siteContext}
 
 [HTML STRUCTURE]:
-${mainHtml.substring(0, 15000)}`;
+${mainHtml.substring(0, 15000)}${multiPageContext}`;
 
       const t = Date.now();
       const result = await callGemini(logId, prompt, imageParts, RECOMMENDATIONS_SCHEMA);
@@ -483,13 +559,14 @@ For each category, score 0-100 based on how many items in that category the site
 - 50 = passes about half
 - 100 = passes every item
 Be honest and critical. Base scores on evidence from the HTML and screenshot.
+${targetKeywords ? `\nFor "Keywords & SEO Alignment": check specifically for these target keywords: ${targetKeywords}. Score based on actual keyword presence in H1, H2s, meta tags, hero text.` : ''}
 
 Also provide the top 5 most critical checklist failures as "checklist_flags".
 
 ${siteContext}
 
 [HTML STRUCTURE]:
-${mainHtml.substring(0, 12000)}`;
+${mainHtml.substring(0, 12000)}${multiPageContext}`;
 
       const t = Date.now();
       const result = await callGemini(logId, prompt, imageParts, CHECKLIST_SCHEMA, 8192);
@@ -506,37 +583,68 @@ ${mainHtml.substring(0, 12000)}`;
 
       const prompt = `You are an Elite CRO Director. Compare this website against its competitors using the CRO checklist framework.
 
+${CRO_CHECKLIST}
+
 TARGET SITE (${url}):
 ${mainHtml.substring(0, 10000)}
 
 COMPETITORS:
 ${competitorContext}
 
-For each competitor, identify:
+For EACH competitor, provide:
 1. The KEY CRO difference (where the competitor does something better or worse)
-2. The target site's strategic advantage over this competitor
+2. The target site's strategic advantage
+3. 2-3 SPECIFIC steal-worthy ideas (e.g., "They have a sticky CTA bar with phone number — add one", "Their hero has a video testimonial — consider adding one")
+4. Score the competitor on ALL 10 checklist categories (0-100) so we can do a direct comparison matrix
 
-Focus on actionable CRO differences: CTAs, trust signals, content structure, mobile optimization, forms, above-the-fold content.
-Be specific — reference exact elements you observe in the HTML.`;
+Focus on actionable, specific CRO differences. Reference exact elements you observe in the HTML (not generic advice).
+Be honest — if the competitor is better at something, say so clearly.`;
 
       const t = Date.now();
-      const result = await callGemini(logId, prompt, imageParts, COMPETITOR_SCHEMA, 4096);
+      const result = await callGemini(logId, prompt, imageParts, COMPETITOR_SCHEMA, 6144);
       console.log(`[${logId}] [PHASE 2] Competitor analysis done in ${Date.now() - t}ms. Comparisons: ${result.comparisons?.length}`);
       return result;
     })() : Promise.resolve({ overview: "", comparisons: [] });
 
+    // 5th AI call: Per-page scoring (only if additional pages were scraped)
+    const perPagePromise = validPages.length > 0 ? (async () => {
+      const pagesContext = [
+        { url, html: mainHtml.substring(0, 5000) },
+        ...validPages.map(p => ({ url: p.url, html: p.html.substring(0, 5000) }))
+      ];
+
+      const prompt = `You are a CRO Auditor. Score each page individually on overall CRO quality (0-100). Identify the top 3 issues per page.
+
+${CRO_CHECKLIST}
+
+PAGES TO SCORE:
+${pagesContext.map(p => `[PAGE: ${p.url}]\n${p.html}`).join('\n\n---\n\n')}
+
+For each page, determine:
+- page_type: What kind of page is it (Homepage, Pricing, About, Contact, Service, Blog, etc.)
+- overall_score: 0-100 CRO score for THIS specific page
+- top_issues: The 3 most critical CRO issues on THIS page (each max 15 words)`;
+
+      const t = Date.now();
+      const result = await callGemini(logId, prompt, [], PER_PAGE_SCHEMA, 4096);
+      console.log(`[${logId}] [PHASE 2] Per-page scoring done in ${Date.now() - t}ms. Pages: ${result.page_scores?.length}`);
+      return result;
+    })() : Promise.resolve({ page_scores: [] });
+
     // Use Promise.allSettled so one failing call doesn't crash the entire audit
-    const [overviewResult, recsResult, checklistResult, competitorResult] = await Promise.allSettled([overviewPromise, recsPromise, checklistPromise, competitorPromise]);
+    const [overviewResult, recsResult, checklistResult, competitorResult, perPageResult] = await Promise.allSettled([overviewPromise, recsPromise, checklistPromise, competitorPromise, perPagePromise]);
 
     const overview = overviewResult.status === 'fulfilled' ? overviewResult.value : { overall_score: 0, summary: "Overview generation failed — please retry.", strengths: [], quick_wins: [] };
     const recs = recsResult.status === 'fulfilled' ? recsResult.value : { recommendations: [] };
     const checklist = checklistResult.status === 'fulfilled' ? checklistResult.value : { checklist_scores: {}, checklist_flags: ["Checklist scoring failed — please retry the audit."] };
     const competitorAnalysis = competitorResult.status === 'fulfilled' ? competitorResult.value : { overview: "", comparisons: [] };
+    const perPageScores = perPageResult.status === 'fulfilled' ? perPageResult.value : { page_scores: [] };
 
     if (overviewResult.status === 'rejected') console.error(`[${logId}] Overview FAILED: ${overviewResult.reason?.message}`);
     if (recsResult.status === 'rejected') console.error(`[${logId}] Recommendations FAILED: ${recsResult.reason?.message}`);
     if (checklistResult.status === 'rejected') console.error(`[${logId}] Checklist FAILED: ${checklistResult.reason?.message}`);
     if (competitorResult.status === 'rejected') console.error(`[${logId}] Competitor FAILED: ${competitorResult.reason?.message}`);
+    if (perPageResult.status === 'rejected') console.error(`[${logId}] Per-page FAILED: ${perPageResult.reason?.message}`);
 
     // ══════════════════════════════════════════════════
     // PHASE 3: Merge & Deliver
@@ -555,6 +663,7 @@ Be specific — reference exact elements you observe in the HTML.`;
       competitor_analysis: competitorAnalysis || { overview: "", comparisons: [] },
       checklist_scores: mergedChecklistScores,
       checklist_flags: checklist.checklist_flags || [],
+      page_scores: perPageScores.page_scores || [],
       audit_metadata: {
         url: url,
         timestamp: new Date().toISOString(),

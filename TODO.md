@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-03-19 (v1.5.0)
+**Last updated**: 2026-03-19 (v1.6.0)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 
@@ -126,14 +126,8 @@ These features are implemented but need real-world testing with a Gemini API key
 #### 4. ~~Server-Side Learning Persistence~~ ✅ DONE (v1.4.0)
 **Status**: Completed. Learnings are now saved to Upstash Redis via `/api/learnings` endpoint. All users contribute to a shared knowledge base. localStorage kept as fallback.
 
-#### 5. Multi-Page Crawl
-**Status**: Only analyzes a single URL per audit.
-**What to do**:
-- Add a "Crawl Depth" dropdown option (1, 3, 5 pages) in the Advanced panel
-- After scraping the main URL, extract internal `<a href>` links
-- Scrape and score each additional page
-- Aggregate scores into a site-wide report with per-page breakdowns
-- Show a page selector or tab system in the dashboard
+#### 5. ~~Multi-Page Analysis~~ ✅ DONE (v1.6.0)
+**Status**: Completed. Users can add up to 4 additional pages in the Advanced panel. Each page is scraped in parallel and scored via a 5th AI call. Per-page scores display in a Site-Wide Page Scores panel.
 
 #### 6. Checklist Drill-Down
 **Status**: Checklist scores show category-level scores but not individual item pass/fail.

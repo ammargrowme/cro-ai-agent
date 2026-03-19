@@ -4,6 +4,55 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 8: v1.6.0 — March 19, 2026
+
+**Goal**: Add enhanced competitor analysis (comparison matrix, steal-worthy ideas), batch multi-page analysis, and target keywords for SEO alignment.
+
+### What Was Built
+
+1. **Enhanced Competitor Analysis (Backend + Frontend)**
+   - `api/analyze.js`: Added `steal_worthy` (array of strings) and `competitor_scores` (10 category scores, 0-100 each) to the competitor schema
+   - Enhanced competitor AI prompt to include full CRO_CHECKLIST and request steal-worthy ideas + per-category scores
+   - Increased competitor call maxTokens from 4096 to 6144
+   - `src/App.jsx`: Added comparison matrix table with sticky first column, color-coded score differences (red = competitor leads, green = you lead)
+   - Added steal-worthy ideas section per competitor card with lightbulb icons
+
+2. **Batch Multi-Page Analysis (Backend + Frontend)**
+   - `api/analyze.js`: Added `PER_PAGE_SCHEMA` for per-page scoring, added additional page scraping in Phase 1, added 5th AI call (`perPagePromise`) in Phase 2
+   - `src/App.jsx`: Added "Batch Pages" textarea in Advanced panel (up to 4 URLs), added Site-Wide Page Scores panel with responsive grid of per-page score cards
+
+3. **Target Keywords (Backend + Frontend)**
+   - `api/analyze.js`: Added `targetKeywords` parameter, built keyword context string injected into all AI prompts
+   - `src/App.jsx`: Added "Target Keywords" input field in Advanced panel, sent in payload
+
+4. **Markdown Export Enhanced**: Now includes steal-worthy ideas from competitor analysis and per-page scores
+
+### Key Design Decisions
+- Per-page scoring is a separate 5th AI call (not merged into existing calls) to keep token budgets manageable
+- Competitor scores use the same 10 checklist categories for direct apples-to-apples comparison
+- Keywords are injected as context into ALL AI calls (overview, recommendations, checklist, competitors, per-page) for consistent alignment
+- Additional pages are scraped in parallel with the main URL and competitors in Phase 1
+
+### Deployment
+- Build verified (`npx vite build` passes)
+- All 6 docs updated
+- Pushed to GitHub → auto-deployed to Vercel
+
+---
+
+## Session 7: v1.5.0 — March 19, 2026
+
+**Goal**: Complete visual refresh with glassmorphism design system.
+
+### What Was Built
+- Deeper dark theme with refined color palette
+- Glassmorphism `.glass-card` class with backdrop-blur across all panels
+- SVG noise texture overlay, gradient animations, floating orb
+- `prefers-reduced-motion` accessibility support
+- Hero section redesign, input form polish, loading screen refinements
+
+---
+
 ## Session 6: v1.4.0 — March 19, 2026
 
 **Goal**: Move the learning system from client-only (localStorage) to server-first (Vercel Redis) so that ALL users contribute to a shared knowledge base. The AI should get smarter for everyone, not just individual users.

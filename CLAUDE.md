@@ -4,7 +4,7 @@
 
 ## Quick Status
 
-- **Version**: 1.5.0 (March 19, 2026)
+- **Version**: 1.6.0 (March 19, 2026)
 - **Live URL**: https://cro-ai-agent.vercel.app/
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
@@ -46,6 +46,19 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - Learning badge in header shows count of past audits learned
 - All docs updated (CLAUDE.md, README, CHANGELOG, DEVELOPER.md, TODO.md)
 
+### v1.6.0 (March 19, 2026) — Enhanced Competitor Analysis + Multi-Page + Keywords
+- Enhanced competitor analysis with comparison matrix table (side-by-side checklist scores) and steal-worthy ideas
+- Batch multi-page analysis: up to 4 additional pages scraped and scored via 5th AI call
+- Target keywords field for SEO alignment verification across all AI prompts
+- Site-Wide Page Scores UI panel with per-page score cards, page types, and top issues
+- Markdown export updated with steal-worthy ideas and page scores
+- Build verified, all docs updated
+
+### v1.5.0 (March 19, 2026) — Visual Refresh
+- Complete glassmorphism UI overhaul with deeper dark theme
+- New animations, noise texture overlay, gradient score circle
+- Accessibility: prefers-reduced-motion support
+
 ### v1.4.0 (March 19, 2026) — Server-Side Learning System
 - Learning system moved from client-only (localStorage) to server-first (Upstash Redis) + local fallback
 - New `api/learnings.js` endpoint: GET returns global learnings, POST saves audits/insights
@@ -84,20 +97,20 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 
 **See `TODO.md` for the full prioritized action plan.** The top 3 items are:
 
-1. **Test v1.4.0 on production** — Run audits at https://cro-ai-agent.vercel.app/ to verify the server-side learning system works (learnings badge increments, data persists across sessions/devices).
-2. **Multi-page crawl** — Add crawl depth option to analyze multiple pages per site.
-3. **Checklist drill-down** — Make checklist category circles clickable to show individual item pass/fail.
+1. **Test v1.6.0 on production** — Run audits at https://cro-ai-agent.vercel.app/ to verify enhanced competitor analysis, multi-page scoring, and keyword alignment work end-to-end.
+2. **Checklist drill-down** — Make checklist category circles clickable to show individual item pass/fail.
+3. **Auto-crawl mode** — Extract internal links from main URL and auto-discover pages to analyze (vs manual entry).
 
 ## Architecture
 
 ### Frontend (React 18 + Vite 5)
-- **Single file**: `src/App.jsx` (~1630 lines) — all UI, state management, and client logic
+- **Single file**: `src/App.jsx` (~2100 lines) — all UI, state management, and client logic
 - **Styling**: Tailwind CSS + inline styles via `BRAND` constant (no external CSS files)
 - **Animations**: Native CSS keyframes only (no Framer Motion)
 - **State**: React `useState`/`useEffect` hooks (no Redux/Zustand)
 
 ### Backend (Vercel Serverless Functions)
-- `api/analyze.js` — Main audit pipeline: scrape → PageSpeed → 3 parallel AI calls (overview, recommendations, checklist scoring)
+- `api/analyze.js` — Main audit pipeline: scrape → PageSpeed → 3-5 parallel AI calls (overview, recommendations, checklist scoring, competitor analysis, per-page scoring)
 - `api/chat.js` — Interactive chat with report-aware context, returns `{message, updated_report, learning_insight}`
 - `api/generateCode.js` — Generates Tailwind CSS code patches for specific recommendations
 - `api/generateABTests.js` — Generates A/B test copy variations

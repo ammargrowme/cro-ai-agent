@@ -321,6 +321,8 @@ function AppContent() {
   // Form States
   const [additionalContext, setAdditionalContext] = useState("");
   const [competitorsInput, setCompetitorsInput] = useState("");
+  const [targetKeywords, setTargetKeywords] = useState("");
+  const [additionalPagesInput, setAdditionalPagesInput] = useState("");
   const [customPageSpeedKey, setCustomPageSpeedKey] = useState(() => getSafeLocalStorage("growagent_pagespeed_key"));
 
   const [appError, setAppError] = useState(null);
@@ -410,10 +412,11 @@ function AppContent() {
     const hasCompetitors = competitorsInput.trim().length > 0;
     const competitorCount = competitorsInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).length;
     const hostname = (() => { try { return new URL(formattedUrl).hostname; } catch { return formattedUrl; } })();
+    const hasPages = additionalPagesArr.length > 0;
     const dynamicSteps = [
-      { id: 'scrape', label: `Scraping ${hostname}${hasCompetitors ? ` + ${competitorCount} competitor${competitorCount > 1 ? 's' : ''}` : ''}...`, icon: <Code size={18} />, detail: 'Fetching HTML, removing scripts & styles' },
+      { id: 'scrape', label: `Scraping ${hostname}${hasPages ? ` + ${additionalPagesArr.length} page${additionalPagesArr.length > 1 ? 's' : ''}` : ''}${hasCompetitors ? ` + ${competitorCount} competitor${competitorCount > 1 ? 's' : ''}` : ''}...`, icon: <Code size={18} />, detail: 'Fetching HTML, removing scripts & styles' },
       { id: 'metrics', label: 'Running PageSpeed & capturing screenshot...', icon: <Activity size={18} />, detail: 'Google Lighthouse performance audit' },
-      { id: 'ai_analysis', label: `AI scoring against ${10} checklist categories...`, icon: <BrainCircuit size={18} />, detail: '3 parallel AI calls: overview + recommendations + checklist' },
+      { id: 'ai_analysis', label: `AI scoring against 10 checklist categories${targetKeywords.trim() ? ' + keyword alignment' : ''}...`, icon: <BrainCircuit size={18} />, detail: `${3 + (hasCompetitors ? 1 : 0) + (hasPages ? 1 : 0)} parallel AI calls${hasPages ? ' (including per-page scoring)' : ''}` },
       { id: 'compile', label: 'Compiling final report...', icon: <Target size={18} />, detail: `${serverLearnings.totalLearnings > 0 ? `Enhanced with ${serverLearnings.totalLearnings} past audit${serverLearnings.totalLearnings !== 1 ? 's' : ''} learned` : 'Generating actionable recommendations'}` },
     ];
     setAnalysisSteps(dynamicSteps);
@@ -425,12 +428,16 @@ function AppContent() {
       setCurrentStep(0);
       const competitors = competitorsInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 2);
       
+      const additionalPagesArr = additionalPagesInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 4).map(p => p.startsWith('http') ? p : `https://${p}`);
+
       const payload = {
         url: formattedUrl,
         context: additionalContext,
         competitors: competitors.map(c => c.startsWith('http') ? c : `https://${c}`),
         customPageSpeedKey: customPageSpeedKey.trim(),
-        pastLearnings: mergeLearnings(getLocalLearnings(), serverLearnings)
+        pastLearnings: mergeLearnings(getLocalLearnings(), serverLearnings),
+        targetKeywords: targetKeywords.trim() || undefined,
+        additionalPages: additionalPagesArr.length > 0 ? additionalPagesArr : undefined
       };
 
       // Interval to update current step based on typical timing
@@ -640,7 +647,7 @@ Your job:
     let content = `# Intelligence Report for ${url}\nScore: ${report.overall_score}/100\n\n## Summary\n${report.summary}\n\n## What's Working\n${(report.strengths || []).map(s => `- ${s}`).join('\n')}\n\n## Quick Wins\n${(report.quick_wins || []).map(q => `- ${q}`).join('\n')}\n\n`;
     if (report.competitor_analysis?.comparisons?.length > 0) {
       content += `## Competitive Intelligence\n${report.competitor_analysis.overview}\n\n`;
-      report.competitor_analysis.comparisons.forEach(c => { content += `### vs ${c.competitor}\n- **Difference**: ${c.difference}\n- **Our Advantage**: ${c.advantage}\n\n`; });
+      report.competitor_analysis.comparisons.forEach(c => { content += `### vs ${c.competitor}\n- **Difference**: ${c.difference}\n- **Our Advantage**: ${c.advantage}\n${c.steal_worthy?.length > 0 ? `- **Steal-Worthy Ideas**:\n${c.steal_worthy.map(s => `  - ${s}`).join('\n')}\n` : ''}\n`; });
     }
     if (report.checklist_scores && Object.keys(report.checklist_scores).length > 0) {
       content += `## CRO Checklist Scores\n`;
@@ -652,6 +659,13 @@ Your job:
     }
     if (report.checklist_flags?.length > 0) {
       content += `## Critical Checklist Failures\n${report.checklist_flags.map(f => `- ${f}`).join('\n')}\n\n`;
+    }
+    if (report.page_scores?.length > 0) {
+      content += `## Site-Wide Page Scores\n`;
+      report.page_scores.forEach(p => {
+        content += `- **${p.page_type || 'Page'}** (${p.url}): ${p.overall_score}/100${p.top_issues?.length > 0 ? `\n  - Issues: ${p.top_issues.join('; ')}` : ''}\n`;
+      });
+      content += '\n';
     }
     content += `## Prioritized Strategy\n${(report.recommendations || []).map(r => `### [${(r.priority || 'Medium').toUpperCase()}] ${r.category || 'General'}\n- **Issue**: ${r.issue || 'N/A'}\n- **Recommendation**: ${r.recommendation || 'N/A'}\n- **Impact**: ${r.expected_impact || 'N/A'}\n- **Implementation**: ${r.implementation || 'N/A'}\n${r.checklist_ref ? `- **Checklist**: ${r.checklist_ref}\n` : ''}`).join('\n')}`;
     const blob = new Blob([content], { type: 'text/markdown' });
@@ -758,7 +772,7 @@ Your job:
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
-  const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); setShowExportMenu(false); };
+  const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setTargetKeywords(""); setAdditionalPagesInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); setShowExportMenu(false); };
   const filteredRecommendations = useMemo(() => report?.recommendations?.filter(r => activeTab === 'all' || r.category?.toLowerCase() === activeTab || r.priority?.toLowerCase() === activeTab) || [], [report?.recommendations, activeTab]);
   const [flippedCards, setFlippedCards] = useState({});
   const toggleFlip = (id) => setFlippedCards(prev => ({ ...prev, [id]: !prev[id] }));
@@ -1191,6 +1205,34 @@ Your job:
                       />
                     </div>
 
+                    {/* Row 2: Keywords + Additional Pages */}
+                    <div className="space-y-2.5">
+                      <label className="text-[#8B95A5] text-xs font-semibold uppercase tracking-wider flex items-center gap-2">
+                        <Search size={14} /> Target Keywords
+                      </label>
+                      <input
+                        type="text"
+                        value={targetKeywords}
+                        onChange={(e) => setTargetKeywords(e.target.value)}
+                        placeholder="E.g., CRO agency, conversion optimization"
+                        className="w-full bg-[#08090D] border border-[#1E222A] rounded-xl px-4 py-3 text-white text-[15px] focus:outline-none focus:border-[#F25430]/40 focus:ring-1 focus:ring-[#F25430]/20 transition-all placeholder:text-[#3A4050]"
+                      />
+                      <div className="text-[10px] text-[#5A6270]">Comma-separated. Used for SEO alignment scoring.</div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <label className="text-[#8B95A5] text-xs font-semibold uppercase tracking-wider flex items-center gap-2">
+                        <LayoutGrid size={14} /> Batch Pages <span className="text-[10px] font-normal text-[#5A6270] lowercase tracking-normal ml-1">(Max 4, same site)</span>
+                      </label>
+                      <textarea
+                        value={additionalPagesInput}
+                        onChange={(e) => setAdditionalPagesInput(e.target.value)}
+                        placeholder="E.g., example.com/pricing&#10;example.com/about&#10;example.com/contact"
+                        className="w-full bg-[#08090D] border border-[#1E222A] rounded-xl p-4 text-white text-[15px] focus:outline-none focus:border-[#F25430]/40 focus:ring-1 focus:ring-[#F25430]/20 transition-all resize-none h-20 placeholder:text-[#3A4050]"
+                      />
+                    </div>
+
+                    {/* Row 3: API Key */}
                     <div className="md:col-span-2 pt-5 border-t border-[#1E222A]">
                       <label className="text-[#8B95A5] text-xs font-semibold uppercase tracking-wider flex items-center gap-2 mb-3">
                         <Key size={14} /> Custom PageSpeed API Key <span className="text-[11px] font-normal text-[#5A6270] lowercase tracking-normal ml-2">(Bypass rate limits - stored locally)</span>
@@ -1553,6 +1595,56 @@ Your job:
                     {report.competitor_analysis.overview}
                   </p>
 
+                  {/* Comparison Matrix */}
+                  {report.competitor_analysis.comparisons.some(c => c.competitor_scores) && (
+                    <div className="relative z-10 mb-8 overflow-x-auto rounded-xl border border-[#1E222A]">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-[#08090D]">
+                            <th className="text-left text-[#8B95A5] p-3 font-semibold text-xs uppercase tracking-wider sticky left-0 bg-[#08090D] z-10">Category</th>
+                            <th className="text-center text-[#34D399] p-3 font-bold text-xs uppercase tracking-wider">Your Site</th>
+                            {report.competitor_analysis.comparisons.map((c, i) => (
+                              <th key={i} className="text-center text-[#F25430] p-3 font-bold text-xs uppercase tracking-wider whitespace-nowrap">{c.competitor}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(CHECKLIST_LABELS).map(([key, label]) => {
+                            const yourScore = report.checklist_scores?.[key] || 0;
+                            return (
+                              <tr key={key} className="border-t border-[#1E222A]/50 hover:bg-[#12151B]/50 transition-colors">
+                                <td className="p-3 text-white text-[13px] font-medium sticky left-0 bg-[#08090D]/90 backdrop-blur-sm z-10">{label}</td>
+                                <td className="p-3 text-center">
+                                  <span className="font-bold text-[13px]" style={{ color: yourScore >= 80 ? '#34D399' : yourScore >= 50 ? '#FBBF24' : '#F87171' }}>{yourScore}</span>
+                                </td>
+                                {report.competitor_analysis.comparisons.map((c, i) => {
+                                  const compScore = c.competitor_scores?.[key];
+                                  const diff = compScore != null ? compScore - yourScore : null;
+                                  return (
+                                    <td key={i} className="p-3 text-center">
+                                      <span className="font-bold text-[13px]" style={{ color: compScore >= 80 ? '#34D399' : compScore >= 50 ? '#FBBF24' : '#F87171' }}>
+                                        {compScore ?? '—'}
+                                      </span>
+                                      {diff != null && diff !== 0 && (
+                                        <span className={`ml-1.5 text-[10px] font-bold ${diff > 0 ? 'text-[#F87171]' : 'text-[#34D399]'}`}>
+                                          {diff > 0 ? `+${diff}` : diff}
+                                        </span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      <div className="px-3 py-2 text-[10px] text-[#5A6270] bg-[#08090D] border-t border-[#1E222A]/50">
+                        Scores based on HTML analysis. <span className="text-[#F87171]">+N</span> = competitor leads, <span className="text-[#34D399]">-N</span> = you lead.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Per-Competitor Cards with Steal-Worthy */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
                     {report.competitor_analysis.comparisons.map((comp, i) => (
                       <div key={i} className="bg-[#12151B]/80 backdrop-blur-md border border-[#1E222A] p-6 rounded-2xl hover:border-[#F25430] transition-colors">
@@ -1571,9 +1663,67 @@ Your job:
                               {comp.advantage}
                             </div>
                           </div>
+                          {comp.steal_worthy?.length > 0 && (
+                            <div>
+                              <div className="text-[11px] text-[#FBBF24] font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                <Lightbulb size={13} /> Steal-Worthy Ideas
+                              </div>
+                              <div className="space-y-2">
+                                {comp.steal_worthy.map((idea, j) => (
+                                  <div key={j} className="text-[#E5E7EB] text-[13px] font-medium leading-relaxed bg-[#FBBF24]/5 p-3 rounded-lg border border-[#FBBF24]/10 flex gap-2">
+                                    <ArrowRight size={14} className="text-[#FBBF24] shrink-0 mt-0.5" />
+                                    {idea}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SITE-WIDE PAGE SCORES (Multi-Page Analysis) */}
+            {report.page_scores?.length > 0 && (
+              <div className="mb-10 print-break animate-in slide-in-from-bottom-8 duration-700">
+                <div className="print-invert-bg glass-card p-8 md:p-10 rounded-[2rem] shadow-2xl relative overflow-hidden">
+                  <div className="absolute -right-16 -top-16 opacity-5 pointer-events-none">
+                    <LayoutGrid size={250} />
+                  </div>
+                  <div className="flex items-center gap-4 mb-6 relative z-10">
+                    <div className="p-3 bg-[#F25430] rounded-2xl shadow-[0_0_20px_rgba(242,84,48,0.5)]">
+                      <LayoutGrid size={28} color="#fff" />
+                    </div>
+                    <h3 className="print-invert-text" style={{ fontFamily: "'Montserrat', sans-serif", color: "#fff", fontSize: "28px", fontWeight: "900", letterSpacing: "-1px" }}>
+                      Site-Wide Page Scores
+                    </h3>
+                  </div>
+                  <p className="text-[#8B95A5] text-sm mb-6 relative z-10">Individual scores for each page analyzed across your site.</p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 relative z-10">
+                    {report.page_scores.map((page, i) => {
+                      const scoreColor = page.overall_score >= 80 ? '#34D399' : page.overall_score >= 50 ? '#FBBF24' : '#F87171';
+                      let pagePath;
+                      try { pagePath = new URL(page.url).pathname || '/'; } catch { pagePath = page.url; }
+                      return (
+                        <div key={i} className="bg-[#08090D]/80 border border-[#1E222A] rounded-xl p-5 text-center hover:border-[#2A2F3A] transition-colors">
+                          <div className="text-[#F25430] text-[10px] font-black uppercase tracking-widest mb-3">{page.page_type || 'Page'}</div>
+                          <div className="text-4xl font-black font-['Montserrat'] mb-2" style={{ color: scoreColor }}>{page.overall_score}</div>
+                          <div className="text-[#5A6270] text-[11px] truncate mb-3" title={page.url}>{pagePath}</div>
+                          {page.top_issues?.length > 0 && (
+                            <div className="text-left mt-3 pt-3 border-t border-[#1E222A]/50">
+                              {page.top_issues.slice(0, 2).map((issue, j) => (
+                                <div key={j} className="text-[#8B95A5] text-[11px] leading-tight mb-1.5 flex items-start gap-1.5">
+                                  <span className="text-[#F87171] mt-0.5 shrink-0">•</span> {issue}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

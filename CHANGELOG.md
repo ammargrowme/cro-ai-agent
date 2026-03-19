@@ -2,6 +2,14 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.6.0] - 2026-03-19
+### Added
+- **Enhanced Competitor Analysis**: Competitor comparison matrix table showing side-by-side checklist scores with color-coded differences. Steal-worthy ideas section per competitor with actionable recommendations to adopt.
+- **Batch Multi-Page Analysis**: New "Batch Pages" field in Advanced panel allows analyzing up to 4 additional pages from the same site. Each page gets an individual score, page type classification, and top issues. Site-Wide Page Scores panel displays per-page results in a responsive grid.
+- **Target Keywords Field**: New "Target Keywords" input in Advanced panel for SEO alignment verification. Keywords are injected into all AI prompts for keyword-aware scoring and recommendations.
+- **5th Parallel AI Call**: Per-page scoring call added to Phase 2 when additional pages are provided. Runs in parallel with the other 3-4 AI calls.
+- **Markdown Export Enhanced**: Export now includes steal-worthy ideas from competitor analysis and per-page scores from multi-page analysis.
+
 ## [1.5.0] - 2026-03-19
 ### Changed
 - **Visual Refresh**: Complete UI overhaul with deeper, more refined dark theme
