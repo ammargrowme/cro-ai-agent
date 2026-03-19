@@ -2,6 +2,14 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.6.1] - 2026-03-19
+### Changed
+- **Professional PDF Export**: Completely replaced the html2canvas screenshot-based PDF with a programmatic jsPDF document builder. New PDF features a branded cover page with score display, section headers with accent bars, executive summary, checklist score table with visual bars, critical failures callout block, competitor comparison matrix, page scores table, structured recommendation cards with two-column impact/implementation layout, and consistent page numbers/headers/footers across all pages. Light professional theme (white background) — no more dark screenshots.
+- **Print CSS Overhaul**: Improved `@media print` styles for professional light-themed output. Glass cards, dark backgrounds, and tables now convert cleanly to light theme. Better page break handling, cleaned-up selectors, and proper SVG/gradient color preservation.
+
+### Added
+- **VISION.md**: New product vision document explaining what GROWAGENT is, the problem it solves, the ultimate goal, how it works today, the full roadmap, guiding principles, and target users. Updated alongside all other documentation.
+
 ## [1.6.0] - 2026-03-19
 ### Added
 - **Enhanced Competitor Analysis**: Competitor comparison matrix table showing side-by-side checklist scores with color-coded differences. Steal-worthy ideas section per competitor with actionable recommendations to adopt.

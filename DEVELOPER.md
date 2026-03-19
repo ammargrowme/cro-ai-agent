@@ -54,6 +54,32 @@ Three to five Gemini calls run simultaneously, all using the same scraped HTML a
 ### Phase 3: Merge & Deliver
 All results are merged into a single report object with `audit_metadata` attached.
 
+## Export System
+
+### PDF Export (Programmatic jsPDF — v1.6.1)
+The PDF is generated entirely via jsPDF's programmatic API — no html2canvas screenshots. This produces a professional, light-themed document with proper pagination.
+
+**Document structure:**
+1. Cover page: Brand header, URL, date, score card with color-coded background, summary
+2. Executive Summary: Strengths (green bullets) + Quick Wins (orange bullets)
+3. CRO Checklist Scores: Two-column table with labels, numeric scores, and colored progress bars
+4. Critical Failures: Red accent block with danger markers
+5. Competitor Analysis (conditional): Comparison matrix table + steal-worthy ideas
+6. Page Scores (conditional): Table with URL, type, score, top issues
+7. Recommendations: Numbered cards with priority badges, two-column impact/implementation layout
+8. All pages: Orange accent header bar, report title, page numbers in footer
+
+**Page break strategy:** Every content block calls `ensureSpace(needed)` before rendering. If the remaining space on the current page is insufficient, a new page is added automatically. This completely prevents section cutting.
+
+### Other Export Formats
+- **PNG**: html2canvas screenshot of dashboard (dark theme preserved)
+- **Markdown**: Structured text with all report sections
+- **CSV**: Recommendations table with all fields
+- **JSON**: Raw report object
+
+### Print (window.print)
+Extensive `@media print` CSS converts the dark glassmorphism UI to a clean light theme. Glass cards, dark backgrounds, tables, SVG circles, and flip cards all transform to printer-friendly layouts.
+
 ## The Learning System
 
 ### Storage Architecture (Server-Side + Local Fallback)

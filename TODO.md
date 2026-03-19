@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-03-19 (v1.6.0)
+**Last updated**: 2026-03-19 (v1.6.1)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 
@@ -112,14 +112,8 @@ These features are implemented but need real-world testing with a Gemini API key
 #### 2. ~~Print CSS for Checklist Panel~~ ✅ DONE (v1.2.1)
 **Status**: Completed. Print CSS rules added for checklist SVG circles, category cards, and critical failure flags.
 
-#### 3. PDF Export with Proper Library
-**Status**: Currently uses `window.print()` which has 3D rendering issues.
-**What to do**:
-- Install `html2canvas` + `jspdf` (or `@react-pdf/renderer`)
-- Create a flattened, light-theme version of the report for PDF
-- Include: score, summary, checklist scores, checklist flags, recommendations with checklist refs
-- Add a proper "Download PDF" button alongside the existing print button
-- The existing "Export" button downloads Markdown — keep that, add PDF as separate button
+#### 3. ~~PDF Export with Proper Library~~ ✅ DONE (v1.6.1)
+**Status**: Completed. PDF now generated programmatically via jsPDF with branded cover page, executive summary, checklist scores with bars, competitor comparison matrix, page scores table, structured recommendation cards, and consistent headers/footers. Light professional theme.
 
 ### Phase 2 — High Value
 

@@ -678,42 +678,390 @@ Your job:
   const reportDashboardRef = useRef(null);
 
   const handleExportPDF = async () => {
-    if (!reportDashboardRef.current || !report) return;
+    if (!report) return;
     setShowExportMenu(false);
     setIsExporting(true);
     try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf')
-      ]);
-      const element = reportDashboardRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#08090D',
-        logging: false,
-        windowWidth: 1200
-      });
-      const imgData = canvas.toDataURL('image/png');
+      const { jsPDF } = await import('jspdf');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = pdfWidth / imgWidth;
-      const scaledHeight = imgHeight * ratio;
+      const W = 210, H = 297;
+      const M = { t: 22, b: 22, l: 18, r: 18 };
+      const CW = W - M.l - M.r;
+      let y = M.t;
 
-      let yOffset = 0;
-      while (yOffset < scaledHeight) {
-        if (yOffset > 0) pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, -yOffset, pdfWidth, scaledHeight);
-        yOffset += pdfHeight;
+      // Color palette (light professional theme)
+      const C = {
+        primary: [242, 84, 48], dark: [20, 22, 28], text: [35, 37, 42],
+        muted: [110, 115, 128], success: [22, 163, 74], warning: [180, 120, 4],
+        danger: [220, 38, 38], bgLight: [246, 247, 249], bgAccent: [255, 243, 239],
+        white: [255, 255, 255], border: [215, 220, 228],
+      };
+      const setC = (c) => pdf.setTextColor(...c);
+      const setF = (c) => pdf.setFillColor(...c);
+      const setD = (c) => pdf.setDrawColor(...c);
+
+      const ensureSpace = (need) => {
+        if (y + need > H - M.b) { pdf.addPage(); y = M.t; return true; }
+        return false;
+      };
+
+      const wrappedText = (text, x, fontSize, color, style, maxW, lineH) => {
+        pdf.setFont('helvetica', style || 'normal');
+        pdf.setFontSize(fontSize);
+        setC(color || C.text);
+        const lh = lineH || fontSize * 0.45;
+        const lines = pdf.splitTextToSize(String(text || ''), maxW || CW);
+        lines.forEach(line => { ensureSpace(lh); pdf.text(line, x, y); y += lh; });
+        return lines.length;
+      };
+
+      const sectionTitle = (title) => {
+        ensureSpace(18);
+        y += 4;
+        setF(C.primary);
+        pdf.rect(M.l, y - 5, 3.5, 11, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(15);
+        setC(C.dark);
+        pdf.text(title, M.l + 8, y + 2);
+        y += 14;
+      };
+
+      const scoreColor = (s) => s >= 80 ? C.success : s >= 50 ? C.warning : C.danger;
+
+      const drawScoreBar = (score, x, barY, barW) => {
+        const bh = 3.5;
+        setF(C.bgLight); pdf.rect(x, barY, barW, bh, 'F');
+        setF(scoreColor(score)); pdf.rect(x, barY, (score / 100) * barW, bh, 'F');
+      };
+
+      const drawBullet = (items, bulletColor, bulletChar) => {
+        (items || []).forEach(item => {
+          ensureSpace(8);
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5);
+          setC(bulletColor);
+          pdf.text(bulletChar, M.l + 3, y);
+          setC(C.text);
+          const lines = pdf.splitTextToSize(String(item), CW - 12);
+          lines.forEach((line, li) => { if (li > 0) ensureSpace(4.2); pdf.text(line, M.l + 10, y); if (li < lines.length - 1) y += 4.2; });
+          y += 5;
+        });
+      };
+
+      // ─── COVER PAGE ─────────────────────────────
+      setF(C.primary); pdf.rect(0, 0, W, 4, 'F');
+
+      y = 45;
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(36); setC(C.primary);
+      pdf.text('GROWAGENT', M.l, y);
+      y += 9;
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(13); setC(C.muted);
+      pdf.text('CRO Audit Intelligence Report', M.l, y);
+
+      y += 18;
+      setD(C.border); pdf.setLineWidth(0.4); pdf.line(M.l, y, W - M.r, y);
+
+      y += 14;
+      pdf.setFontSize(10); setC(C.muted); pdf.text('WEBSITE ANALYZED', M.l, y);
+      y += 7;
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(18); setC(C.text);
+      const displayUrl = url.length > 55 ? url.substring(0, 55) + '...' : url;
+      pdf.text(displayUrl, M.l, y);
+
+      y += 14;
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10); setC(C.muted);
+      pdf.text('REPORT DATE', M.l, y);
+      y += 7;
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(13); setC(C.text);
+      pdf.text(new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }), M.l, y);
+
+      // Score display
+      y += 30;
+      const scoreVal = report.overall_score || 0;
+      const sColor = scoreColor(scoreVal);
+      // Score background card
+      setF(C.bgLight); pdf.rect(M.l, y - 12, CW, 50, 'F');
+      setF(sColor); pdf.rect(M.l, y - 12, 4, 50, 'F');
+
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(56); setC(sColor);
+      pdf.text(`${scoreVal}`, W / 2, y + 12, { align: 'center' });
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(11); setC(C.muted);
+      pdf.text('OVERALL CRO SCORE (0-100)', W / 2, y + 22, { align: 'center' });
+      y += 48;
+
+      // Summary
+      y += 8;
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10.5); setC(C.text);
+      const summaryLines = pdf.splitTextToSize(report.summary || '', CW);
+      summaryLines.forEach(line => { pdf.text(line, M.l, y); y += 4.8; });
+
+      // Cover footer
+      setF(C.primary); pdf.rect(0, H - 4, W, 4, 'F');
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); setC(C.muted);
+      pdf.text('Generated by GROWAGENT  |  AI-Powered CRO Analysis  |  growme.ca', W / 2, H - 9, { align: 'center' });
+
+      // ─── PAGE 2+: CONTENT ──────────────────────
+      pdf.addPage(); y = M.t;
+
+      // Executive Summary
+      sectionTitle('Executive Summary');
+
+      if (report.strengths?.length > 0) {
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); setC(C.success);
+        pdf.text('What\'s Working', M.l + 2, y); y += 6;
+        drawBullet(report.strengths, C.success, '+');
+        y += 2;
+      }
+
+      if (report.quick_wins?.length > 0) {
+        ensureSpace(12);
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); setC(C.warning);
+        pdf.text('Quick Wins', M.l + 2, y); y += 6;
+        drawBullet(report.quick_wins, C.primary, '>');
+        y += 2;
+      }
+
+      // ─── CHECKLIST SCORES ──────────────────────
+      if (report.checklist_scores && Object.keys(report.checklist_scores).length > 0) {
+        sectionTitle('CRO Checklist Scores');
+
+        const entries = Object.entries(report.checklist_scores);
+        const colW = (CW - 6) / 2;
+
+        entries.forEach(([key, score], i) => {
+          const label = CHECKLIST_LABELS[key] || key.replace(/_/g, ' ');
+          const col = i % 2;
+          const x = M.l + col * (colW + 6);
+          if (col === 0) ensureSpace(13);
+
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8.5); setC(C.muted);
+          pdf.text(label, x, y);
+          pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); setC(scoreColor(score));
+          pdf.text(`${score}`, x + colW, y, { align: 'right' });
+          drawScoreBar(score, x, y + 2, colW);
+          if (col === 1) y += 13;
+        });
+        if (entries.length % 2 === 1) y += 13;
+        y += 4;
+      }
+
+      // ─── CRITICAL FAILURES ─────────────────────
+      if (report.checklist_flags?.length > 0) {
+        sectionTitle('Critical Checklist Failures');
+        const blockH = report.checklist_flags.length * 7.5 + 8;
+        ensureSpace(blockH);
+        setF(C.bgAccent); pdf.rect(M.l, y - 3, CW, blockH, 'F');
+        setF(C.danger); pdf.rect(M.l, y - 3, 3, blockH, 'F');
+        y += 2;
+        report.checklist_flags.forEach(flag => {
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5);
+          setC(C.danger); pdf.text('X', M.l + 7, y);
+          setC(C.text);
+          const flines = pdf.splitTextToSize(flag, CW - 16);
+          flines.forEach(fl => { pdf.text(fl, M.l + 14, y); y += 4.2; });
+          y += 3;
+        });
+        y += 6;
+      }
+
+      // ─── COMPETITOR ANALYSIS ───────────────────
+      if (report.competitor_analysis?.comparisons?.length > 0) {
+        sectionTitle('Competitive Intelligence');
+        wrappedText(report.competitor_analysis.overview, M.l, 10, C.text, 'normal', CW, 4.5);
+        y += 6;
+
+        // Comparison Table
+        if (report.competitor_analysis.comparisons.some(c => c.competitor_scores)) {
+          const cats = Object.entries(CHECKLIST_LABELS);
+          const comps = report.competitor_analysis.comparisons;
+          const catColW = 44;
+          const sColW = (CW - catColW) / (comps.length + 1);
+
+          ensureSpace(20);
+          // Table header
+          setF([235, 237, 242]); pdf.rect(M.l, y, CW, 8, 'F');
+          pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5);
+          setC(C.muted); pdf.text('Category', M.l + 2, y + 5.5);
+          setC(C.success); pdf.text('Your Site', M.l + catColW + sColW * 0.5, y + 5.5, { align: 'center' });
+          comps.forEach((c, i) => {
+            setC(C.primary);
+            const cName = c.competitor?.length > 18 ? c.competitor.substring(0, 18) + '..' : (c.competitor || '');
+            pdf.text(cName, M.l + catColW + sColW * (i + 1) + sColW * 0.5, y + 5.5, { align: 'center' });
+          });
+          y += 10;
+
+          cats.forEach(([key, label], idx) => {
+            ensureSpace(7.5);
+            if (idx % 2 === 0) { setF([250, 251, 253]); pdf.rect(M.l, y - 1.5, CW, 7, 'F'); }
+            pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); setC(C.text);
+            pdf.text(label, M.l + 2, y + 2.5);
+            const yScore = report.checklist_scores?.[key] || 0;
+            pdf.setFont('helvetica', 'bold'); setC(scoreColor(yScore));
+            pdf.text(`${yScore}`, M.l + catColW + sColW * 0.5, y + 2.5, { align: 'center' });
+            comps.forEach((c, i) => {
+              const cs = c.competitor_scores?.[key];
+              if (cs != null) {
+                setC(scoreColor(cs));
+                pdf.text(`${cs}`, M.l + catColW + sColW * (i + 1) + sColW * 0.5, y + 2.5, { align: 'center' });
+                const diff = cs - yScore;
+                if (diff !== 0) {
+                  pdf.setFontSize(6.5); setC(diff > 0 ? C.danger : C.success);
+                  pdf.text(diff > 0 ? `+${diff}` : `${diff}`, M.l + catColW + sColW * (i + 1) + sColW * 0.5 + 10, y + 2.5);
+                  pdf.setFontSize(8);
+                }
+              }
+            });
+            y += 7;
+          });
+          y += 4;
+          pdf.setFontSize(6.5); setC(C.muted);
+          pdf.text('Scores 0-100.  +N = competitor leads (red),  -N = you lead (green).', M.l, y); y += 6;
+        }
+
+        // Steal-Worthy Ideas
+        report.competitor_analysis.comparisons.forEach(comp => {
+          if (comp.steal_worthy?.length > 0) {
+            ensureSpace(14);
+            pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10); setC(C.primary);
+            pdf.text(`Ideas to Steal from ${comp.competitor || 'Competitor'}`, M.l + 2, y); y += 6;
+            comp.steal_worthy.forEach(idea => {
+              ensureSpace(8);
+              pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); setC(C.text);
+              const il = pdf.splitTextToSize(`- ${idea}`, CW - 8);
+              il.forEach(line => { pdf.text(line, M.l + 5, y); y += 4; });
+              y += 1.5;
+            });
+            y += 3;
+          }
+        });
+        y += 4;
+      }
+
+      // ─── PAGE SCORES ──────────────────────────
+      if (report.page_scores?.length > 0) {
+        sectionTitle('Site-Wide Page Scores');
+        ensureSpace(14);
+        setF([235, 237, 242]); pdf.rect(M.l, y, CW, 8, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); setC(C.muted);
+        pdf.text('Page URL', M.l + 2, y + 5.5);
+        pdf.text('Type', M.l + 85, y + 5.5);
+        pdf.text('Score', M.l + 118, y + 5.5);
+        pdf.text('Top Issues', M.l + 135, y + 5.5);
+        y += 10;
+
+        report.page_scores.forEach((pg, idx) => {
+          ensureSpace(10);
+          if (idx % 2 === 0) { setF([250, 251, 253]); pdf.rect(M.l, y - 2, CW, 8, 'F'); }
+          let pgPath; try { pgPath = new URL(pg.url).pathname || '/'; } catch { pgPath = pg.url; }
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); setC(C.text);
+          pdf.text(pgPath.substring(0, 38), M.l + 2, y + 2);
+          pdf.text(pg.page_type || '-', M.l + 85, y + 2);
+          pdf.setFont('helvetica', 'bold'); setC(scoreColor(pg.overall_score));
+          pdf.text(`${pg.overall_score}`, M.l + 118, y + 2);
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); setC(C.muted);
+          const issues = (pg.top_issues || []).slice(0, 2).join('; ');
+          const il = pdf.splitTextToSize(issues, CW - 137);
+          il.slice(0, 1).forEach(line => pdf.text(line, M.l + 135, y + 2));
+          y += 8;
+        });
+        y += 6;
+      }
+
+      // ─── RECOMMENDATIONS ──────────────────────
+      sectionTitle('Prioritized Recommendations');
+      const prioColors = { High: C.danger, Medium: C.warning, Low: C.success };
+
+      (report.recommendations || []).forEach((rec, i) => {
+        ensureSpace(38);
+
+        // Header row: number + priority badge + category
+        setF(C.primary);
+        pdf.rect(M.l, y - 1, 7.5, 7.5, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); setC(C.white);
+        pdf.text(`${i + 1}`, M.l + 3.75, y + 4, { align: 'center' });
+
+        const prio = rec.priority || 'Medium';
+        const pCol = prioColors[prio] || C.muted;
+        setF(pCol);
+        pdf.rect(M.l + 10, y - 0.5, 17, 6.5, 'F');
+        pdf.setFontSize(7); setC(C.white);
+        pdf.text(prio.toUpperCase(), M.l + 18.5, y + 4, { align: 'center' });
+
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8.5); setC(C.muted);
+        pdf.text(rec.category || 'General', M.l + 30, y + 4);
+
+        if (rec.checklist_ref) {
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); setC(C.primary);
+          const refText = rec.checklist_ref.length > 45 ? rec.checklist_ref.substring(0, 45) + '..' : rec.checklist_ref;
+          pdf.text(refText, W - M.r, y + 4, { align: 'right' });
+        }
+        y += 10;
+
+        // Issue (bold title)
+        wrappedText(rec.issue || '', M.l + 2, 10.5, C.dark, 'bold', CW - 4, 4.8);
+        y += 2;
+
+        // Recommendation
+        wrappedText(rec.recommendation || '', M.l + 2, 9.5, C.text, 'normal', CW - 4, 4.2);
+        y += 3;
+
+        // Impact & Implementation in two-column layout
+        const detailStartY = y;
+        const halfW = (CW - 8) / 2;
+
+        if (rec.expected_impact) {
+          pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); setC(C.success);
+          pdf.text('EXPECTED IMPACT', M.l + 2, y); y += 4;
+          const impLines = pdf.splitTextToSize(rec.expected_impact, halfW);
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8.5); setC(C.text);
+          impLines.forEach(line => { ensureSpace(4); pdf.text(line, M.l + 2, y); y += 3.8; });
+        }
+
+        const leftColEnd = y;
+        if (rec.implementation) {
+          y = detailStartY;
+          pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); setC(C.primary);
+          pdf.text('IMPLEMENTATION', M.l + halfW + 6, y); y += 4;
+          const implLines = pdf.splitTextToSize(rec.implementation, halfW);
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8.5); setC(C.text);
+          implLines.forEach(line => { ensureSpace(4); pdf.text(line, M.l + halfW + 6, y); y += 3.8; });
+        }
+        y = Math.max(y, leftColEnd);
+        y += 4;
+
+        // Separator
+        setD(C.border); pdf.setLineWidth(0.3); pdf.line(M.l, y, W - M.r, y);
+        y += 7;
+      });
+
+      // ─── PAGE NUMBERS & HEADERS ON ALL PAGES ─
+      const totalP = pdf.internal.getNumberOfPages();
+      for (let p = 1; p <= totalP; p++) {
+        pdf.setPage(p);
+        if (p > 1) {
+          // Top accent bar
+          setF(C.primary); pdf.rect(0, 0, W, 2.5, 'F');
+          // Header text
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); setC(C.muted);
+          pdf.text(`CRO Audit Report  |  ${displayUrl}`, M.l, 10);
+          pdf.text(`GROWAGENT`, W - M.r, 10, { align: 'right' });
+        }
+        // Footer
+        setD(C.border); pdf.setLineWidth(0.3);
+        pdf.line(M.l, H - 14, W - M.r, H - 14);
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); setC(C.muted);
+        if (p === 1) {
+          // Cover footer already drawn above
+        } else {
+          pdf.text('Generated by GROWAGENT  |  AI-Powered CRO Analysis', M.l, H - 10);
+          pdf.text(`Page ${p} of ${totalP}`, W - M.r, H - 10, { align: 'right' });
+        }
       }
 
       pdf.save(`GrowAgent_${new URL(url).hostname}_CRO_Report.pdf`);
     } catch (err) {
       console.error("PDF export error:", err);
-      setAppError("PDF export failed. Please try the Print option instead.");
+      setAppError("PDF export failed. Please try again.");
     } finally {
       setIsExporting(false);
     }
@@ -801,149 +1149,158 @@ Your job:
         @media print {
           /* ── GLOBAL PRINT RESET ── */
           .no-print { display: none !important; }
-          body, html { 
-            background: white !important; 
-            color: #111 !important; 
-            font-size: 11pt !important;
+          body, html {
+            background: white !important;
+            color: #1a1a1a !important;
+            font-size: 10.5pt !important;
+            line-height: 1.5 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          * { 
-            box-shadow: none !important; 
+          * {
+            box-shadow: none !important;
             text-shadow: none !important;
             animation: none !important;
             transition: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
           }
           .print-break { page-break-inside: avoid; break-inside: avoid; }
-          
-          /* ── LAYOUT OVERRIDES ── */
-          main { padding: 0 !important; max-width: 100% !important; }
-          .print-invert-bg { background: #f9f9f9 !important; border: 1px solid #ddd !important; }
-          .print-invert-text { color: #111 !important; }
 
-          /* ── HEADER: Show clean brand ── */
-          .sticky { 
-            position: relative !important; 
-            background: white !important; 
+          /* ── LAYOUT ── */
+          main { padding: 0 !important; max-width: 100% !important; }
+          .print-invert-bg { background: #f7f8fa !important; border: 1px solid #e0e3e8 !important; }
+          .print-invert-text { color: #1a1a1a !important; }
+
+          /* ── GLASS CARDS: Light background ── */
+          .glass-card {
+            background: #f7f8fa !important;
+            border: 1px solid #e0e3e8 !important;
+            backdrop-filter: none !important;
+          }
+          .glass-card * { color: #2a2a2a; }
+          .glass-card h3 { color: #1a1a1a !important; }
+
+          /* ── HEADER ── */
+          .sticky {
+            position: relative !important;
+            background: white !important;
             border-bottom: 3px solid #F25430 !important;
-            padding: 12px 20px !important;
+            padding: 10px 16px !important;
           }
 
-          /* ── TOP WIDGETS: Fix score circle ── */
+          /* ── SVG CIRCLES: Preserve colors ── */
           svg circle { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
+          svg linearGradient stop { print-color-adjust: exact !important; }
 
-          /* ── CHECKLIST SCORES PANEL: Print with colors ── */
+          /* ── CHECKLIST SCORES GRID ── */
           [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] {
             display: grid !important;
             grid-template-columns: repeat(5, 1fr) !important;
-            gap: 12px !important;
+            gap: 10px !important;
           }
           [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] > div {
-            background: #f9f9f9 !important;
-            border: 1px solid #ddd !important;
+            background: #f7f8fa !important;
+            border: 1px solid #e0e3e8 !important;
             page-break-inside: avoid !important;
-            print-color-adjust: exact !important;
-            -webkit-print-color-adjust: exact !important;
           }
-          [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] svg circle {
-            print-color-adjust: exact !important;
-            -webkit-print-color-adjust: exact !important;
-          }
-          [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] span {
-            color: #111 !important;
-          }
-          /* Checklist flags: preserve red styling */
+          [class*="grid-cols-2"][class*="sm:grid-cols-3"][class*="lg:grid-cols-5"] span { color: #1a1a1a !important; }
+
+          /* Checklist flags */
           [class*="bg-[#F87171]/10"] {
             background: #fef2f2 !important;
             border: 1px solid #fca5a5 !important;
-            print-color-adjust: exact !important;
-            -webkit-print-color-adjust: exact !important;
           }
-          [class*="bg-[#F87171]/10"] * {
-            color: #dc2626 !important;
-          }
-          
-          /* ── FLIP CARDS: Flatten entirely for print ── */
+          [class*="bg-[#F87171]/10"] * { color: #dc2626 !important; }
+
+          /* ── FLIP CARDS: Flatten for print ── */
           .flip-card {
             perspective: none !important;
             height: auto !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
-            margin-bottom: 16px !important;
+            margin-bottom: 12px !important;
           }
-          .flip-card-inner {
-            position: relative !important;
-            transform: none !important;
-            transform-style: flat !important;
-          }
+          .flip-card-inner { position: relative !important; transform: none !important; transform-style: flat !important; }
           .flip-card-front {
             position: relative !important;
-            background: #f9f9f9 !important;
-            border: 1px solid #ddd !important;
-            border-radius: 12px !important;
-            color: #111 !important;
+            background: #f7f8fa !important;
+            border: 1px solid #e0e3e8 !important;
+            border-left: 4px solid #F25430 !important;
+            border-radius: 8px !important;
+            color: #1a1a1a !important;
             height: auto !important;
           }
-          .flip-card-front * { color: #333 !important; }
-          .flip-card-front [style*="color: rgb(255, 255, 255)"],
-          .flip-card-front [style*="color: #fff"],
-          .flip-card-front .text-white { color: #111 !important; }
+          .flip-card-front * { color: #2a2a2a !important; }
+          .flip-card-front .text-white { color: #1a1a1a !important; }
           .flip-card-back {
             position: relative !important;
             transform: none !important;
             backface-visibility: visible !important;
             background: white !important;
             border: 1px solid #F25430 !important;
-            border-radius: 12px !important;
-            margin-top: 8px !important;
+            border-radius: 8px !important;
+            margin-top: 6px !important;
             height: auto !important;
             page-break-inside: avoid !important;
           }
-          .flip-card-back * { color: #333 !important; }
-          .flip-card-back .text-white { color: #111 !important; }
-          .flip-card-back [style*="color: rgb(242"] { color: #F25430 !important; }
+          .flip-card-back * { color: #2a2a2a !important; }
+          .flip-card-back .text-white { color: #1a1a1a !important; }
 
-          /* ── GRID: Force 2-column for print ── */
+          /* ── GRIDS ── */
           .grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3 {
             display: grid !important;
             grid-template-columns: 1fr 1fr !important;
-            gap: 16px !important;
+            gap: 12px !important;
           }
 
-          /* ── LIST VIEW: Clean spacing ── */
+          /* ── LIST VIEW ── */
           .space-y-6 > * {
-            background: #f9f9f9 !important;
-            border: 1px solid #ddd !important;
+            background: #f7f8fa !important;
+            border: 1px solid #e0e3e8 !important;
             page-break-inside: avoid !important;
           }
 
-          /* ── COLORS: Make priority badges readable ── */
+          /* ── PRIORITY BADGES ── */
           [class*="rounded-full"][class*="tracking-widest"] {
             border: 1px solid currentColor !important;
             background: transparent !important;
             print-color-adjust: exact !important;
-            -webkit-print-color-adjust: exact !important;
           }
 
-          /* ── IMPACT BARS: Force color print ── */
+          /* ── SCORE/IMPACT BARS ── */
           [class*="rounded-sm"][class*="shadow"] {
             print-color-adjust: exact !important;
-            -webkit-print-color-adjust: exact !important;
           }
 
-          /* ── AMBIENT ELEMENTS: Hide ── */
-          .animate-blob, .animate-ping, .animate-pulse,
+          /* ── TABLES (competitor matrix) ── */
+          table { border-collapse: collapse !important; }
+          table th { background: #f0f1f3 !important; color: #1a1a1a !important; }
+          table td { color: #2a2a2a !important; border-bottom: 1px solid #e8eaed !important; }
+          table tr:hover { background: transparent !important; }
+
+          /* ── HIDE AMBIENT/DECORATIVE ELEMENTS ── */
+          .animate-blob, .animate-ping, .animate-pulse, .animate-float,
           .bg-grid-pattern, .ai-engine-graphic,
-          [class*="blur-"], [class*="opacity-5"],
-          [class*="opacity-10"], [class*="pointer-events-none"][class*="absolute"] {
+          [class*="blur-3xl"], [class*="opacity-5"],
+          [class*="opacity-10"],
+          [class*="pointer-events-none"][class*="absolute"]:not([class*="z-10"]) {
             display: none !important;
           }
 
-          /* ── PAGE MARGINS ── */
+          /* ── DARK BG ELEMENTS: Convert to light ── */
+          [class*="bg-[#08090D]"], [class*="bg-[#12151B]"], [class*="bg-[#161920]"], [class*="bg-[#1E222A]"] {
+            background: #f7f8fa !important;
+          }
+          .text-white, [style*="color: rgb(255, 255, 255)"], [style*="color: #fff"] { color: #1a1a1a !important; }
+          [style*="color: #8B95A5"], [style*="color: rgb(139, 149, 165)"] { color: #555 !important; }
+
+          /* ── PAGE SETUP ── */
           @page {
             size: A4;
-            margin: 1.5cm 1.5cm 2cm 1.5cm;
+            margin: 1.5cm 1.5cm 1.8cm 1.5cm;
           }
+          @page :first { margin-top: 1cm; }
         }
         @keyframes shimmer { 0% { transform: translateX(-100%) skewX(-15deg); } 100% { transform: translateX(200%) skewX(-15deg); } }
         .animate-shimmer { animation: shimmer 2.5s infinite linear; }

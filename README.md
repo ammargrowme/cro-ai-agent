@@ -98,6 +98,8 @@ Every audit scores the website against the **GrowMe Basic Website Standards** ch
 
 ## For AI Agents & Developers
 
+**See [VISION.md](./VISION.md)** for the product vision, ultimate goal, and full roadmap.
+
 **See [CLAUDE.md](./CLAUDE.md)** for comprehensive AI context including architecture, schemas, decisions, and rules.
 
 **See [DEVELOPER.md](./DEVELOPER.md)** for technical deep-dive on the intelligence pipeline.

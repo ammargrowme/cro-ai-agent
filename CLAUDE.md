@@ -234,7 +234,7 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 
 1. ~~**Competitor analysis is a no-op**~~ — Fixed in v1.3.0. Competitor URLs are now scraped and analyzed via a 4th AI call.
 2. **Chat `updated_report` can be partial** — Gemini sometimes returns incomplete report objects. The frontend checks JSON equality to avoid breaking state, but the update is silently lost.
-3. **PDF export uses `window.print()`** — Works, 3D layouts are flattened. Checklist panel now has print CSS (v1.2.1).
+3. ~~**PDF export uses `window.print()`**~~ — Fixed in v1.6.1. PDF is now generated programmatically via jsPDF with professional light-themed layout, proper page breaks, cover page, section headers, tables, and page numbers. Print CSS also improved.
 4. **localStorage learning cap** — 20 audits / 50 insights. Heavy users could still bloat localStorage on older browsers.
 5. ~~**No error state for chat**~~ — Fixed in v1.2.1. Retry button now appears on chat error messages.
 6. ~~**Stale schema in App.jsx**~~ — Fixed in v1.2.1. Dead code removed.
@@ -249,10 +249,11 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 │   ├── generateCode.js     # Code patch generator (Tailwind CSS)
 │   └── generateABTests.js  # A/B copy variation generator
 ├── src/
-│   ├── App.jsx             # Entire frontend (~1600 lines, single file)
+│   ├── App.jsx             # Entire frontend (~2200 lines, single file)
 │   └── main.jsx            # React entry point
 ├── public/                 # Static assets
 ├── CLAUDE.md               # THIS FILE — read first
+├── VISION.md               # Product vision, purpose, and roadmap
 ├── TODO.md                 # Action plan — read second
 ├── CHANGELOG.md            # Version history
 ├── DEVELOPER.md            # Technical deep-dive (pipeline, learning, chat protocol)
@@ -318,6 +319,12 @@ After making ANY code change, you MUST update the following files before committ
 ### 6. `README.md`
 - Update if user-facing features changed (new UI sections, new workflows)
 - Update the features list, checklist table, or roadmap as needed
+
+### 7. `VISION.md`
+- Update if new features change the product's capabilities or direction
+- Update the "How It Works Today" section when the pipeline changes
+- Update the "Roadmap" section when items are completed or new ones emerge
+- Update "Guiding Principles" if the product philosophy evolves
 
 ### Commit message convention
 - Use conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`

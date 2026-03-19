@@ -4,6 +4,52 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 9: v1.6.1 — March 19, 2026
+
+**Goal**: Replace the screenshot-based PDF export with a professional, programmatic document builder. Create a product vision document.
+
+### What Was Built
+
+1. **Professional PDF Export (Complete Rewrite)**
+   - Replaced `html2canvas` screenshot approach with programmatic `jsPDF` document builder
+   - **Cover page**: GROWAGENT branding, URL analyzed, report date, large score display with color-coded background card, executive summary text
+   - **Executive Summary section**: Strengths (green bullets) and Quick Wins (orange bullets) with proper text wrapping
+   - **CRO Checklist Scores**: Two-column layout with category labels, numeric scores, and visual progress bars (color-coded: green/amber/red)
+   - **Critical Failures**: Red accent block with left border and X markers
+   - **Competitor Analysis**: Full comparison matrix table with alternating row colors, score differences (red/green), and steal-worthy ideas section
+   - **Page Scores**: Table with URL path, page type, score, and top issues columns
+   - **Recommendations**: Numbered cards with priority badge (colored fill), category, checklist reference, issue title, recommendation text, and two-column impact/implementation layout
+   - **Page management**: Automatic page breaks (no section cutting), orange accent bar + report header on all content pages, footer with page numbers on all pages
+   - Light professional theme throughout (white background, clean typography)
+
+2. **Print CSS Overhaul**
+   - Improved `@media print` to convert dark glassmorphism UI to clean light theme
+   - Added selectors for glass-card conversion, dark background elements, table styling, and SVG gradient preservation
+   - Better page break handling with `break-inside: avoid`
+   - Cleaned up selectors for flip cards (added accent left border)
+
+3. **VISION.md**
+   - Created comprehensive product vision document covering:
+     - What GROWAGENT is and what problem it solves
+     - The 7-point ultimate goal statement
+     - How the app works today (v1.6.0 pipeline)
+     - Full roadmap (near-term, medium-term, long-term)
+     - 6 guiding principles
+     - Target user profiles
+   - Added to documentation update rules (now 7 docs to maintain)
+
+### Key Design Decisions
+- **Programmatic PDF vs html2canvas**: html2canvas produces dark screenshots that waste toner, cut sections arbitrarily across pages, and look unprofessional. Programmatic jsPDF gives full control over layout, page breaks, fonts, and colors. Trade-off: more code (~200 lines) but much better output.
+- **Two-column layout for recommendations**: Impact and Implementation details render side-by-side to save vertical space and improve scannability.
+- **ensureSpace() pattern**: Every content block calls ensureSpace() before drawing to check if there's room on the current page. If not, a new page is added automatically. This completely eliminates cut sections.
+
+### Deployment
+- Build verified (`npx vite build` passes)
+- All 7 docs updated (CLAUDE.md, TODO.md, CHANGELOG.md, DEVELOPER.md, IMPLEMENTATION_RECAP.md, README.md, VISION.md)
+- Pushed to GitHub → auto-deployed to Vercel
+
+---
+
 ## Session 8: v1.6.0 — March 19, 2026
 
 **Goal**: Add enhanced competitor analysis (comparison matrix, steal-worthy ideas), batch multi-page analysis, and target keywords for SEO alignment.
