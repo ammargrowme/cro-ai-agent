@@ -1,6 +1,89 @@
 
 const apiKey = process.env.VITE_GEMINI_API_KEY || "";
 
+// ─── CRO CHECKLIST (from GrowMe Basic Website Standards) ──────────
+const CRO_CHECKLIST = `
+## CRO CHECKLIST — Use this as your scoring framework:
+
+### Keywords & SEO Alignment
+- H1 includes the primary keyword for the page
+- H2s include relevant keywords (natural, not spammy)
+- SEO title written using best practices with target keyword(s)
+- Meta description written using best practices with target keyword(s)
+
+### Above-the-Fold & Hero
+- Header does not take up full screen height on desktop
+- Header does not take up excessive vertical space on mobile
+- Hero section does not push critical content entirely below the fold
+- Primary keyword (H1 topic) is clear within the first fold
+- Main value proposition is clear within the first fold
+- Primary CTA is visible above the fold
+- Trust badges/awards/logos appear in hero section when applicable
+
+### CTA & Conversion Focus
+- Page has one primary conversion goal (Most Wanted Action)
+- CTA text clearly states what the user gets when they click
+- No vague CTA text (e.g., "Submit", "Click Here")
+- CTA buttons match the outcome (e.g., "Call Us" does not link to a form)
+- Primary CTA is repeated mid-page
+- Only one primary CTA type per page (no competing actions)
+- CTA buttons are filled and strongly contrast with the background
+
+### Content Structure & Clarity
+- Page avoids walls of text (short paragraphs, scannable layout)
+- FAQ section included on home page and service pages
+- Content written for scanning (bullet points, clear headings)
+- Headings summarize meaning (not vague like "Our Services")
+- Logical flow: What this is → Why it matters → Why us → How it works → Proof → CTA
+- Every section logically connects to the conversion goal
+- Grammar and writing quality are error-free
+
+### Visual Hierarchy & Design
+- Sticky menu present with CTA button
+- Most important elements visually stand out (clear hierarchy)
+- Whitespace used intentionally to guide attention
+- Images are high resolution, not blurry or pixelated
+- Images properly sized, not stretched disproportionately
+
+### Mobile Optimization
+- Page designed mobile-first
+- Content collapsed/hidden where appropriate to reduce mobile scrolling
+- Main CTA available in the mobile menu
+- Buttons large enough for mobile tapping (minimum 44px height)
+- Buttons not placed too close together on mobile
+- Body text at least 16px on mobile
+
+### Trust & Social Proof
+- Google review scroller included when applicable
+- Testimonials are specific and credible
+- Footer properly formatted with business and legal information
+- All contact information consistent with Google Business Profile
+
+### Forms & Interaction
+- Forms do not contain unnecessary required fields
+- Form labels are visible (label above field, not placeholder-only)
+- Error messages clear and visible when form validation fails
+- Phone number clickable on all pages (tel: link)
+- Contact page displays phone number above the fold
+- Contact page displays main form above the fold or within one scroll on mobile
+
+### Performance & QA
+- Page speed tested and optimized
+- No broken elements (bugs/layout issues)
+- No placeholder texts (Lorem Ipsum, dummy testimonials)
+- No auto-playing audio or disruptive pop-ups
+- No irrelevant outbound links on lead-gen landing pages
+- Logo links back to homepage
+- Favicon present and displays correctly
+- Page URL clean and readable
+
+### Content Standards
+- First 2 mobile screenfuls contain the clearest version of the page
+- Every section must support user's ability to understand the offer and take next step
+- CTAs appear after key decision-making moments (benefits, proof, pricing, FAQs)
+- Content reinforces CTA, not competes with it
+`;
+
 // ─── UTILITIES ──────────────────────────────────────────────
 
 const sanitizeHtml = (rawHtml) => {
@@ -20,7 +103,7 @@ const sanitizeHtml = (rawHtml) => {
     .substring(0, 25000);
 };
 
-const callGemini = async (logId, promptText, imageParts, schema) => {
+const callGemini = async (logId, promptText, imageParts, schema, maxTokens = 4096) => {
   const model = "gemini-2.5-flash";
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -32,7 +115,7 @@ const callGemini = async (logId, promptText, imageParts, schema) => {
       responseMimeType: "application/json",
       responseSchema: schema,
       temperature: 0.2,
-      maxOutputTokens: 4096
+      maxOutputTokens: maxTokens
     }
   };
 
@@ -94,23 +177,53 @@ const RECOMMENDATIONS_SCHEMA = {
   properties: {
     recommendations: {
       type: "array",
-      description: "Exactly 5 high-impact CRO recommendations.",
+      description: "Exactly 6 high-impact CRO recommendations based on the checklist.",
       items: {
         type: "object",
         properties: {
           id: { type: "number" },
           priority: { type: "string", description: "High, Medium, or Low" },
-          category: { type: "string", description: "UX, Design, Performance, or Copy" },
+          category: { type: "string", description: "CTA, Trust, UX, Design, Performance, Copy, Mobile, SEO, or Forms" },
           issue: { type: "string", description: "What is broken. MAX 25 words." },
           recommendation: { type: "string", description: "How to fix it. MAX 30 words." },
           expected_impact: { type: "string", description: "Expected outcome. MAX 15 words." },
-          implementation: { type: "string", description: "Technical hint. MAX 20 words." }
+          implementation: { type: "string", description: "Technical hint. MAX 20 words." },
+          checklist_ref: { type: "string", description: "Which checklist item(s) this addresses. MAX 15 words." }
         },
-        required: ["id", "priority", "category", "issue", "recommendation", "expected_impact", "implementation"]
+        required: ["id", "priority", "category", "issue", "recommendation", "expected_impact", "implementation", "checklist_ref"]
       }
     }
   },
   required: ["recommendations"]
+};
+
+const CHECKLIST_SCHEMA = {
+  type: "object",
+  properties: {
+    checklist_scores: {
+      type: "object",
+      description: "Score each checklist category 0-100 based on observed compliance.",
+      properties: {
+        seo_alignment: { type: "number", description: "Keywords & SEO Alignment score 0-100" },
+        above_the_fold: { type: "number", description: "Above-the-Fold & Hero score 0-100" },
+        cta_focus: { type: "number", description: "CTA & Conversion Focus score 0-100" },
+        content_structure: { type: "number", description: "Content Structure & Clarity score 0-100" },
+        visual_hierarchy: { type: "number", description: "Visual Hierarchy & Design score 0-100" },
+        mobile_optimization: { type: "number", description: "Mobile Optimization score 0-100" },
+        trust_proof: { type: "number", description: "Trust & Social Proof score 0-100" },
+        forms_interaction: { type: "number", description: "Forms & Interaction score 0-100" },
+        performance_qa: { type: "number", description: "Performance & QA score 0-100" },
+        content_standards: { type: "number", description: "Content Standards score 0-100" }
+      },
+      required: ["seo_alignment", "above_the_fold", "cta_focus", "content_structure", "visual_hierarchy", "mobile_optimization", "trust_proof", "forms_interaction", "performance_qa", "content_standards"]
+    },
+    checklist_flags: {
+      type: "array",
+      description: "Top 5 most critical checklist failures found. Each MAX 20 words.",
+      items: { type: "string" }
+    }
+  },
+  required: ["checklist_scores", "checklist_flags"]
 };
 
 // ─── MAIN HANDLER ──────────────────────────────────────────
@@ -118,7 +231,7 @@ const RECOMMENDATIONS_SCHEMA = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-  const { url, context, competitors, customPageSpeedKey } = req.body;
+  const { url, context, competitors, customPageSpeedKey, pastLearnings } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
   const logId = Math.random().toString(36).substring(7);
@@ -129,7 +242,6 @@ export default async function handler(req, res) {
   try {
     // ══════════════════════════════════════════════════
     // PHASE 1: Scrape + PageSpeed IN PARALLEL
-    //   (These two don't depend on each other)
     // ══════════════════════════════════════════════════
     const scrapePromise = (async () => {
       try {
@@ -177,30 +289,42 @@ export default async function handler(req, res) {
       return data;
     })();
 
-    // Wait for BOTH scrape and PageSpeed to finish before AI calls
     const [mainHtml, pageSpeedData] = await Promise.all([scrapePromise, pageSpeedPromise]);
     console.log(`[${logId}] [PHASE 1 DONE] ${Date.now() - globalStart}ms elapsed`);
 
     // ══════════════════════════════════════════════════
-    // PHASE 2: Both AI calls IN PARALLEL
-    //   (Both need Phase 1 results, but not each other)
+    // PHASE 2: Three AI calls IN PARALLEL
+    //   Overview + Recommendations + Checklist Scoring
     // ══════════════════════════════════════════════════
     const imageParts = [];
     if (pageSpeedData.screenshot) {
       imageParts.push({ inlineData: { mimeType: pageSpeedData.mimeType, data: pageSpeedData.screenshot } });
     }
 
+    // Build learning context from past audits
+    let learningContext = "";
+    if (pastLearnings && pastLearnings.length > 0) {
+      const recentLearnings = pastLearnings.slice(-5);
+      learningContext = `\n\n[LEARNING FROM PAST AUDITS - Use these patterns to give SMARTER advice]:
+${recentLearnings.map((l, i) => `${i + 1}. Site "${l.url}" (Score: ${l.score}/100) — Key issues: ${l.topIssues?.join('; ') || 'N/A'} | Insights from feedback: ${l.feedbackInsights?.join('; ') || 'None yet'}`).join('\n')}
+If you see similar patterns in THIS site, call them out and provide more targeted fixes based on what worked before.`;
+    }
+
     const siteContext = `URL: ${url}\nPageSpeed: ${pageSpeedData.scoreText}\nUser Goals: ${context || "N/A"}`;
-    console.log(`[${logId}] [PHASE 2] Launching both AI calls in parallel... Image: ${imageParts.length > 0 ? 'Yes' : 'No'}`);
+    console.log(`[${logId}] [PHASE 2] Launching 3 AI calls in parallel... Image: ${imageParts.length > 0 ? 'Yes' : 'No'} | Learnings: ${pastLearnings?.length || 0}`);
 
     const overviewPromise = (async () => {
-      const prompt = `You are an Elite CRO Director. Analyze this website data and screenshot.
+      const prompt = `You are an Elite CRO Director with deep expertise in conversion optimization. Analyze this website data and screenshot.
+
+You MUST evaluate the site against this professional CRO checklist:
+${CRO_CHECKLIST}
 
 CRITICAL RULES:
-- summary: MAX 60 words. Be specific about what works and what doesn't.
-- Each strength: MAX 20 words.
-- Each quick_win: MAX 20 words.
-- overall_score: Be critical. 90+ is exceptional. Most sites score 50-75.
+- summary: MAX 60 words. Be specific about what works and what doesn't. Reference specific checklist failures.
+- Each strength: MAX 20 words. Must reference what the site does RIGHT from the checklist.
+- Each quick_win: MAX 20 words. Must be directly tied to a checklist item.
+- overall_score: Be critical. 90+ is exceptional. Most sites score 50-75. Score based on checklist compliance.
+${learningContext}
 
 ${siteContext}
 
@@ -214,13 +338,19 @@ ${mainHtml}`;
     })();
 
     const recsPromise = (async () => {
-      const prompt = `You are an Elite CRO Director. Based on your analysis of this website, provide exactly 5 actionable CRO recommendations.
+      const prompt = `You are an Elite CRO Director. Based on your analysis of this website, provide exactly 6 actionable CRO recommendations.
+
+You MUST base your recommendations on this professional CRO checklist:
+${CRO_CHECKLIST}
 
 CRITICAL RULES:
-- Exactly 5 recommendations. No more, no less.
+- Exactly 6 recommendations. No more, no less.
+- Each recommendation MUST reference which checklist item(s) it addresses in the "checklist_ref" field.
 - Each field must be CONCISE: issue max 25 words, recommendation max 30 words, implementation max 20 words, expected_impact max 15 words.
 - priority must be "High", "Medium", or "Low".
-- category must be "UX", "Design", "Performance", or "Copy".
+- category must be one of: "CTA", "Trust", "UX", "Design", "Performance", "Copy", "Mobile", "SEO", or "Forms".
+- Focus on the HIGHEST-IMPACT checklist failures first.
+${learningContext}
 
 ${siteContext}
 
@@ -233,8 +363,31 @@ ${mainHtml.substring(0, 15000)}`;
       return result;
     })();
 
-    // Wait for both AI calls to finish
-    const [overview, recs] = await Promise.all([overviewPromise, recsPromise]);
+    const checklistPromise = (async () => {
+      const prompt = `You are a CRO Auditor. Score this website against each category in the CRO checklist below.
+
+${CRO_CHECKLIST}
+
+For each category, score 0-100 based on how many items in that category the site passes.
+- 0 = fails every item
+- 50 = passes about half
+- 100 = passes every item
+Be honest and critical. Base scores on evidence from the HTML and screenshot.
+
+Also provide the top 5 most critical checklist failures as "checklist_flags".
+
+${siteContext}
+
+[HTML STRUCTURE]:
+${mainHtml.substring(0, 12000)}`;
+
+      const t = Date.now();
+      const result = await callGemini(logId, prompt, imageParts, CHECKLIST_SCHEMA, 2048);
+      console.log(`[${logId}] [PHASE 2] Checklist done in ${Date.now() - t}ms.`);
+      return result;
+    })();
+
+    const [overview, recs, checklist] = await Promise.all([overviewPromise, recsPromise, checklistPromise]);
 
     // ══════════════════════════════════════════════════
     // PHASE 3: Merge & Deliver
@@ -245,11 +398,20 @@ ${mainHtml.substring(0, 15000)}`;
       strengths: overview.strengths || [],
       quick_wins: overview.quick_wins || [],
       recommendations: recs.recommendations || [],
-      competitor_analysis: { overview: "", comparisons: [] }
+      competitor_analysis: { overview: "", comparisons: [] },
+      checklist_scores: checklist.checklist_scores || {},
+      checklist_flags: checklist.checklist_flags || [],
+      audit_metadata: {
+        url: url,
+        timestamp: new Date().toISOString(),
+        had_screenshot: imageParts.length > 0,
+        had_learnings: (pastLearnings?.length || 0) > 0,
+        duration_ms: Date.now() - globalStart
+      }
     };
 
     const totalTime = Date.now() - globalStart;
-    console.log(`[${logId}] [DONE] Score: ${report.overall_score} | Strengths: ${report.strengths.length} | Wins: ${report.quick_wins.length} | Recs: ${report.recommendations.length} | Total: ${totalTime}ms`);
+    console.log(`[${logId}] [DONE] Score: ${report.overall_score} | Strengths: ${report.strengths.length} | Wins: ${report.quick_wins.length} | Recs: ${report.recommendations.length} | Checklist: ${Object.keys(report.checklist_scores).length} categories | Total: ${totalTime}ms`);
     console.log(`[${logId}] ════════════════════════════════════════`);
 
     return res.status(200).json(report);

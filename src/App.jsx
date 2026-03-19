@@ -44,7 +44,10 @@ import {
   Play,
   XCircle,
   Terminal,
-  Key
+  Key,
+  BookOpen,
+  Brain,
+  ClipboardCheck
 } from "lucide-react";
 
 // Backend routes now handle AI logic.
@@ -133,14 +136,96 @@ const setSafeLocalStorage = (key, value) => {
   try { localStorage.setItem(key, value); } catch (e) { }
 };
 
+// --- LEARNING SYSTEM ---
+const LEARNINGS_KEY = "growagent_learnings";
+const INSIGHTS_KEY = "growagent_insights";
+
+const getLearnings = () => {
+  try {
+    const raw = localStorage.getItem(LEARNINGS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+};
+
+const saveLearning = (auditResult) => {
+  try {
+    const learnings = getLearnings();
+    const entry = {
+      url: auditResult.audit_metadata?.url || "unknown",
+      score: auditResult.overall_score,
+      timestamp: auditResult.audit_metadata?.timestamp || new Date().toISOString(),
+      topIssues: (auditResult.recommendations || []).slice(0, 3).map(r => r.issue),
+      checklistWeaknesses: Object.entries(auditResult.checklist_scores || {})
+        .filter(([, v]) => v < 50)
+        .map(([k]) => k.replace(/_/g, ' ')),
+      feedbackInsights: []
+    };
+    learnings.push(entry);
+    // Keep only last 20 audits
+    const trimmed = learnings.slice(-20);
+    localStorage.setItem(LEARNINGS_KEY, JSON.stringify(trimmed));
+    return entry;
+  } catch (e) { return null; }
+};
+
+const addFeedbackInsight = (insight) => {
+  try {
+    const insights = JSON.parse(localStorage.getItem(INSIGHTS_KEY) || "[]");
+    insights.push({ text: insight, timestamp: new Date().toISOString() });
+    // Keep last 50 insights
+    localStorage.setItem(INSIGHTS_KEY, JSON.stringify(insights.slice(-50)));
+    // Also attach to most recent learning entry
+    const learnings = getLearnings();
+    if (learnings.length > 0) {
+      const last = learnings[learnings.length - 1];
+      if (!last.feedbackInsights) last.feedbackInsights = [];
+      last.feedbackInsights.push(insight);
+      localStorage.setItem(LEARNINGS_KEY, JSON.stringify(learnings));
+    }
+  } catch (e) {}
+};
+
+const getPastLearningsForPrompt = () => {
+  try {
+    const learnings = getLearnings();
+    const insights = JSON.parse(localStorage.getItem(INSIGHTS_KEY) || "[]");
+    // Attach global insights to the learning entries
+    if (insights.length > 0 && learnings.length > 0) {
+      const last = learnings[learnings.length - 1];
+      const globalInsights = insights.slice(-10).map(i => i.text);
+      last.feedbackInsights = [...new Set([...(last.feedbackInsights || []), ...globalInsights])];
+    }
+    return learnings.slice(-5);
+  } catch (e) { return []; }
+};
+
+// --- CHECKLIST CATEGORY LABELS ---
+const CHECKLIST_LABELS = {
+  seo_alignment: "SEO & Keywords",
+  above_the_fold: "Above the Fold",
+  cta_focus: "CTA & Conversion",
+  content_structure: "Content Structure",
+  visual_hierarchy: "Visual Hierarchy",
+  mobile_optimization: "Mobile",
+  trust_proof: "Trust & Proof",
+  forms_interaction: "Forms",
+  performance_qa: "Performance & QA",
+  content_standards: "Content Standards"
+};
+
 // --- ICONS AND UI CATEGORIZATION ---
 const getIconForCategory = (category, size = 18) => {
   if (!category) return <Type size={size} />;
   const cat = category.toLowerCase();
   if (cat.includes('cta') || cat.includes('click')) return <MousePointerClick size={size} />;
-  if (cat.includes('trust') || cat.includes('security')) return <ShieldCheck size={size} />;
+  if (cat.includes('trust') || cat.includes('security') || cat.includes('proof')) return <ShieldCheck size={size} />;
   if (cat.includes('ux') || cat.includes('layout') || cat.includes('fold')) return <LayoutTemplate size={size} />;
   if (cat.includes('speed') || cat.includes('performance')) return <Zap size={size} />;
+  if (cat.includes('mobile')) return <MonitorSmartphone size={size} />;
+  if (cat.includes('seo') || cat.includes('keyword')) return <Search size={size} />;
+  if (cat.includes('form')) return <ClipboardCheck size={size} />;
+  if (cat.includes('design') || cat.includes('visual')) return <Eye size={size} />;
+  if (cat.includes('copy') || cat.includes('content')) return <Type size={size} />;
   return <Type size={size} />;
 };
 
@@ -259,7 +344,8 @@ export default function App() {
         url: formattedUrl,
         context: additionalContext,
         competitors: competitors.map(c => c.startsWith('http') ? c : `https://${c}`),
-        customPageSpeedKey: customPageSpeedKey.trim()
+        customPageSpeedKey: customPageSpeedKey.trim(),
+        pastLearnings: getPastLearningsForPrompt()
       };
 
       // Interval to update current step based on typical timing
@@ -282,9 +368,11 @@ export default function App() {
       }
 
       const realReport = await response.json();
-      
+
       if (realReport) {
         setReport(realReport);
+        // Save to learning system for future audits
+        saveLearning(realReport);
         setCountdown(3);
         setStatus("wrapped_countdown");
       } else {
@@ -313,8 +401,20 @@ export default function App() {
 
     const payload = {
       history: newHistory,
-      systemInstruction: `You are a helpful CRO Strategy Assistant. CURRENT REPORT STATE: ${JSON.stringify(report)}. 
-        Respond with a JSON object: { "message": "...", "updated_report": { ... } }`
+      systemInstruction: `You are an expert CRO Strategy Assistant for the GROWAGENT platform. You have deep knowledge of conversion rate optimization, A/B testing, and the GrowMe CRO checklist.
+
+CURRENT REPORT STATE:
+${JSON.stringify(report)}
+
+PAST AUDIT INSIGHTS (learn from these):
+${JSON.stringify(getPastLearningsForPrompt().slice(-3))}
+
+Your job:
+- Answer questions about the audit results with specificity
+- Help the user understand WHY certain issues matter for conversions
+- If the user wants to modify the report, return an updated_report with ALL fields preserved
+- Extract reusable CRO insights from the conversation into learning_insight
+- Reference checklist categories and scores when relevant`
     };
 
     try {
@@ -323,11 +423,17 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      
+
       if (!response.ok) throw new Error("Chat failed");
       const responseData = await response.json();
 
       setChatHistory([...newHistory, { role: "model", parts: [{ text: responseData.message }] }]);
+
+      // Capture learning insights from chat
+      if (responseData.learning_insight) {
+        addFeedbackInsight(responseData.learning_insight);
+      }
+
       if (responseData.updated_report && JSON.stringify(responseData.updated_report) !== JSON.stringify(report)) {
         setReport(responseData.updated_report); setReportUpdatedFlash(true);
         setTimeout(() => setReportUpdatedFlash(false), 1500);
@@ -335,7 +441,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Chat Error:", error);
-      setChatHistory([...newHistory, { role: "model", parts: [{ text: "Sorry, I had trouble processing that request." }] }]);
+      setChatHistory([...newHistory, { role: "model", parts: [{ text: "Sorry, I had trouble processing that request. Please try again." }] }]);
     }
     finally { setIsChatLoading(false); }
   };
@@ -384,7 +490,18 @@ export default function App() {
       content += `## Competitive Intelligence\n${report.competitor_analysis.overview}\n\n`;
       report.competitor_analysis.comparisons.forEach(c => { content += `### vs ${c.competitor}\n- **Difference**: ${c.difference}\n- **Our Advantage**: ${c.advantage}\n\n`; });
     }
-    content += `## Prioritized Strategy\n${(report.recommendations || []).map(r => `### [${(r.priority || 'Medium').toUpperCase()}] ${r.category || 'General'}\n- **Issue**: ${r.issue || 'N/A'}\n- **Recommendation**: ${r.recommendation || 'N/A'}\n- **Impact**: ${r.expected_impact || 'N/A'}\n- **Implementation**: ${r.implementation || 'N/A'}\n`).join('\n')}`;
+    if (report.checklist_scores && Object.keys(report.checklist_scores).length > 0) {
+      content += `## CRO Checklist Scores\n`;
+      Object.entries(report.checklist_scores).forEach(([key, score]) => {
+        const label = CHECKLIST_LABELS[key] || key.replace(/_/g, ' ');
+        content += `- **${label}**: ${score}/100\n`;
+      });
+      content += '\n';
+    }
+    if (report.checklist_flags?.length > 0) {
+      content += `## Critical Checklist Failures\n${report.checklist_flags.map(f => `- ${f}`).join('\n')}\n\n`;
+    }
+    content += `## Prioritized Strategy\n${(report.recommendations || []).map(r => `### [${(r.priority || 'Medium').toUpperCase()}] ${r.category || 'General'}\n- **Issue**: ${r.issue || 'N/A'}\n- **Recommendation**: ${r.recommendation || 'N/A'}\n- **Impact**: ${r.expected_impact || 'N/A'}\n- **Implementation**: ${r.implementation || 'N/A'}\n${r.checklist_ref ? `- **Checklist**: ${r.checklist_ref}\n` : ''}`).join('\n')}`;
     const blob = new Blob([content], { type: 'text/markdown' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `GrowAgent_${new URL(url).hostname}.md`; a.click();
   };
@@ -601,11 +718,18 @@ export default function App() {
             GROW<span style={{ color: BRAND.primary }}>AGENT</span>
           </span>
         </div>
-        {status === "complete" && (
-          <button onClick={handleReset} style={{ border: `1px solid ${BRAND.bgSurfaceHighlight}`, color: BRAND.textMuted }} className="px-5 py-2.5 rounded-xl text-sm font-bold hover:text-white hover:bg-[#1A1D24] transition-all flex items-center gap-2 active:scale-95 hover:border-[#F25430] hover:shadow-[0_0_15px_rgba(242,84,48,0.25)]">
-            <RefreshCw size={16} /> New Intelligence Scan
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {getLearnings().length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#4ADE80]/10 border border-[#4ADE80]/20 text-[#4ADE80] text-xs font-bold">
+              <Brain size={14} /> {getLearnings().length} past audit{getLearnings().length !== 1 ? 's' : ''} learned
+            </div>
+          )}
+          {status === "complete" && (
+            <button onClick={handleReset} style={{ border: `1px solid ${BRAND.bgSurfaceHighlight}`, color: BRAND.textMuted }} className="px-5 py-2.5 rounded-xl text-sm font-bold hover:text-white hover:bg-[#1A1D24] transition-all flex items-center gap-2 active:scale-95 hover:border-[#F25430] hover:shadow-[0_0_15px_rgba(242,84,48,0.25)]">
+              <RefreshCw size={16} /> New Intelligence Scan
+            </button>
+          )}
+        </div>
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-12 relative z-10">
@@ -1073,6 +1197,69 @@ export default function App() {
               </div>
             )}
 
+            {/* CRO CHECKLIST SCORES */}
+            {report.checklist_scores && Object.keys(report.checklist_scores).length > 0 && (
+              <div className="mb-10 print-break animate-in slide-in-from-bottom-8 duration-700">
+                <div style={{ background: "linear-gradient(135deg, #1A1D24, #101217)", border: "1px solid #242830" }} className="print-invert-bg p-8 md:p-10 rounded-[2rem] shadow-2xl relative overflow-hidden">
+                  <div className="absolute -right-16 -top-16 opacity-5 pointer-events-none">
+                    <ClipboardCheck size={250} />
+                  </div>
+
+                  <div className="flex items-center gap-4 mb-3 relative z-10">
+                    <div className="p-3 bg-[#F25430] rounded-2xl shadow-[0_0_20px_rgba(242,84,48,0.5)]">
+                      <ClipboardCheck size={28} color="#fff" />
+                    </div>
+                    <h3 className="print-invert-text" style={{ fontFamily: "'Montserrat', sans-serif", color: "#fff", fontSize: "28px", fontWeight: "900", letterSpacing: "-1px" }}>
+                      CRO Checklist Audit
+                    </h3>
+                  </div>
+
+                  <p className="text-[#9CA3AF] text-sm font-medium mb-8 relative z-10">
+                    Scored against the GrowMe Basic Website Standards checklist ({Object.keys(report.checklist_scores).length} categories)
+                  </p>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 relative z-10 mb-8">
+                    {Object.entries(report.checklist_scores).map(([key, score]) => {
+                      const label = CHECKLIST_LABELS[key] || key.replace(/_/g, ' ');
+                      const color = score >= 80 ? '#4ADE80' : score >= 50 ? '#FBBF24' : '#F87171';
+                      return (
+                        <div key={key} className="bg-[#0B0C10] border border-[#242830] rounded-2xl p-4 text-center hover:border-[#F25430]/50 transition-colors">
+                          <div className="relative mx-auto w-16 h-16 mb-3">
+                            <svg width="64" height="64" viewBox="0 0 64 64" className="rotate-[-90deg]">
+                              <circle cx="32" cy="32" r="28" fill="none" stroke="#242830" strokeWidth="5" />
+                              <circle cx="32" cy="32" r="28" fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
+                                strokeDasharray="175.93" strokeDashoffset={175.93 - (175.93 * score) / 100}
+                                className="transition-all duration-1000"
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-white font-black text-sm font-['Montserrat']">{score}</span>
+                            </div>
+                          </div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color }}>{label}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {report.checklist_flags?.length > 0 && (
+                    <div className="relative z-10">
+                      <div className="text-[11px] text-[#F87171] font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <AlertCircle size={14} /> Critical Checklist Failures
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {report.checklist_flags.map((flag, i) => (
+                          <div key={i} className="bg-[#F87171]/10 border border-[#F87171]/20 rounded-xl px-4 py-3 text-[#F87171] text-[13px] font-medium flex items-start gap-2">
+                            <XCircle size={14} className="shrink-0 mt-0.5" /> {flag}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* RECOMMENDATIONS SECTION */}
             <div className="mt-16">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-10 gap-4">
@@ -1146,7 +1333,14 @@ export default function App() {
                           <p className="text-white text-[15px] font-medium leading-relaxed mb-6 flex-shrink-0">{rec.recommendation}</p>
 
                           <div className="text-[#9CA3AF] text-[11px] font-bold uppercase tracking-widest mb-2 flex-shrink-0">Execution</div>
-                          <p className="text-[#D1D5DB] text-[13px] leading-relaxed bg-[#1A1D24] p-4 rounded-xl border border-[#242830] mb-6 shrink-0">{rec.implementation}</p>
+                          <p className="text-[#D1D5DB] text-[13px] leading-relaxed bg-[#1A1D24] p-4 rounded-xl border border-[#242830] mb-4 shrink-0">{rec.implementation}</p>
+
+                          {rec.checklist_ref && (
+                            <div className="flex items-start gap-2 mb-6 shrink-0">
+                              <ClipboardCheck size={14} className="text-[#FBBF24] shrink-0 mt-0.5" />
+                              <span className="text-[#FBBF24] text-[11px] font-bold uppercase tracking-wider">{rec.checklist_ref}</span>
+                            </div>
+                          )}
 
                           <div className="mt-auto shrink-0 pb-2 space-y-3">
                             <div className="flex gap-3">
@@ -1262,6 +1456,13 @@ export default function App() {
                             <div style={{ color: BRAND.textMuted, fontSize: "13px", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px", fontWeight: "800" }}>Implementation</div>
                             <p className="print-invert-text" style={{ color: "#9CA3AF", fontSize: "14px", lineHeight: "1.6", fontWeight: "500" }}>{rec.implementation}</p>
                           </div>
+
+                          {rec.checklist_ref && (
+                            <div className="flex items-start gap-2 mt-2">
+                              <ClipboardCheck size={14} className="text-[#FBBF24] shrink-0 mt-0.5" />
+                              <span className="text-[#FBBF24] text-[11px] font-bold uppercase tracking-wider">{rec.checklist_ref}</span>
+                            </div>
+                          )}
 
                           <div className="flex gap-3 mt-4 no-print">
                             <button
