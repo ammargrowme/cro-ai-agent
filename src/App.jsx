@@ -266,7 +266,7 @@ function AppContent() {
     // Build rich context for the chat AI (merged local + server learnings)
     const pastData = mergeLearnings(getLocalLearnings(), serverLearnings);
     const recentPast = pastData.slice(-3);
-    const localInsightsRaw = JSON.parse(localStorage.getItem(LOCAL_INSIGHTS_KEY) || "[]");
+    const localInsightsRaw = JSON.parse(localStorage.getItem("growagent_insights") || "[]");
     const serverInsightTexts = (serverLearnings.insights || []).map(i => typeof i === 'string' ? JSON.parse(i).text : i.text);
     const uniqueInsights = [...new Set([...serverInsightTexts, ...localInsightsRaw.map(i => i.text)])].slice(-10);
 
@@ -852,7 +852,6 @@ Your job:
       a.href = canvas.toDataURL('image/png');
       a.download = `GrowAgent_${new URL(url).hostname}_CRO_Report.png`;
       a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     } catch (err) {
       console.error("PNG export error:", err);
       setAppError("PNG export failed. Please try again.");
@@ -1604,7 +1603,7 @@ Your job:
           <div ref={reportDashboardRef} className={`transition-all duration-700 ${reportUpdatedFlash ? 'scale-[1.01] drop-shadow-[0_0_50px_rgba(242,84,48,0.25)]' : 'scale-100'}`}>
 
             {/* Action Bar & View Toggle */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4 no-print glass-card p-4 rounded-2xl">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4 no-print p-4 rounded-2xl relative z-40" style={{ background: BRAND.bgSurface, border: `1px solid rgba(255,255,255,0.04)` }}>
               <div className="text-[14px] font-medium text-[#8B95A5] flex items-center gap-3">
                 <CheckCircle size={18} color={BRAND.accentSuccess} />
                 Audit complete for <span className="text-white font-semibold">{new URL(url).hostname}</span>
@@ -1626,38 +1625,40 @@ Your job:
                   <Printer size={14} /> Print
                 </button>
                 <div className="relative" data-export-menu>
-                  <button onClick={() => setShowExportMenu(!showExportMenu)} className="flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-[13px] font-semibold transition-all active:scale-95" style={{ background: `linear-gradient(135deg, ${BRAND.primary}, #D94A2A)`, boxShadow: '0 4px 12px rgba(242,84,48,0.3)' }}>
+                  <button onClick={(e) => { e.stopPropagation(); setShowExportMenu(!showExportMenu); }} className="flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-[13px] font-semibold transition-all active:scale-95" style={{ background: `linear-gradient(135deg, ${BRAND.primary}, #D94A2A)`, boxShadow: '0 4px 12px rgba(242,84,48,0.3)' }}>
                     <Download size={14} /> Export ▾
                   </button>
                   {showExportMenu && (
-                    <div className="absolute right-0 mt-2 w-48 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 glass-card">
-                      <button onClick={handleExportPDF} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors">
-                        <Download size={14} className="text-[#F25430]" /> PDF Report
+                    <div className="absolute right-0 mt-2 w-52 rounded-xl shadow-2xl z-50 overflow-y-auto max-h-[70vh] custom-scrollbar" style={{ background: BRAND.bgSurface, border: `1px solid ${BRAND.borderHover}` }}>
+                      <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#5A6270] border-b border-[#1E222A]">Documents</div>
+                      <button onClick={handleExportPDF} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors">
+                        <Download size={13} className="text-[#F25430] shrink-0" /> PDF Report
                       </button>
-                      <button onClick={handleExportPNG} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
-                        <Download size={14} className="text-[#34D399]" /> PNG Screenshot
+                      <button onClick={handleExportDOCX} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]/50">
+                        <FileText size={13} className="text-[#60A5FA] shrink-0" /> Word (.docx)
                       </button>
-                      <button onClick={handleDownload} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
-                        <Download size={14} className="text-[#FBBF24]" /> Markdown
+                      <button onClick={handleExportTXT} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]/50">
+                        <FileType2 size={13} className="text-[#8B95A5] shrink-0" /> Plain Text (.txt)
                       </button>
-                      <button onClick={handleExportCSV} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
-                        <Download size={14} className="text-[#8B95A5]" /> CSV (Recommendations)
+                      <button onClick={handleDownload} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]/50">
+                        <Download size={13} className="text-[#FBBF24] shrink-0" /> Markdown (.md)
                       </button>
-                      <button onClick={handleExportJSON} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
-                        <Download size={14} className="text-[#5A6270]" /> JSON (Raw Data)
+                      <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#5A6270] border-t border-[#2A2F3A] border-b border-b-[#1E222A]">Data</div>
+                      <button onClick={handleExportXLSX} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors">
+                        <FileSpreadsheet size={13} className="text-[#34D399] shrink-0" /> Excel (.xlsx)
                       </button>
-                      <div className="border-t-2 border-[#2A2F3A] my-1"></div>
-                      <button onClick={handleExportXLSX} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors">
-                        <FileSpreadsheet size={14} className="text-[#34D399]" /> Excel (.xlsx)
+                      <button onClick={handleExportCSV} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]/50">
+                        <Download size={13} className="text-[#8B95A5] shrink-0" /> CSV (.csv)
                       </button>
-                      <button onClick={handleExportDOCX} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
-                        <FileText size={14} className="text-[#60A5FA]" /> Word (.docx)
+                      <button onClick={handleExportJSON} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]/50">
+                        <Download size={13} className="text-[#5A6270] shrink-0" /> JSON (.json)
                       </button>
-                      <button onClick={handleExportTXT} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
-                        <FileType2 size={14} className="text-[#8B95A5]" /> Plain Text (.txt)
+                      <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#5A6270] border-t border-[#2A2F3A] border-b border-b-[#1E222A]">Images</div>
+                      <button onClick={handleExportPNG} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors">
+                        <Download size={13} className="text-[#34D399] shrink-0" /> PNG Screenshot
                       </button>
-                      <button onClick={handleExportJPEG} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
-                        <Download size={14} className="text-[#FBBF24]" /> JPEG Screenshot
+                      <button onClick={handleExportJPEG} className="w-full px-4 py-2.5 text-left text-[13px] font-semibold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]/50">
+                        <Download size={13} className="text-[#FBBF24] shrink-0" /> JPEG Screenshot
                       </button>
                     </div>
                   )}

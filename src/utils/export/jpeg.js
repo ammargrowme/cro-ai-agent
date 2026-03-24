@@ -18,5 +18,4 @@ export const exportJPEG = async (elementRef, url) => {
   a.href = canvas.toDataURL('image/jpeg', 0.92);
   a.download = `GrowAgent_${new URL(url).hostname}_CRO_Report.jpg`;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
