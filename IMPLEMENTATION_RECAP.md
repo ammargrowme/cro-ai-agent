@@ -4,6 +4,76 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 10: v1.7.0 — March 24, 2026
+
+**Goal**: Fix critical bugs preventing the app from working, modularize the codebase, add multi-format exports, and harden API security.
+
+### What Was Built
+
+1. **Critical Bug Fixes**
+   - `additionalPagesArr` TDZ bug: variable used before `const` declaration crashed every Analyze click
+   - `LOCAL_INSIGHTS_KEY` undefined in chat: non-exported const from `utils/learning.js` referenced directly in App.jsx
+   - Export dropdown z-index: `glass-card`'s `backdrop-filter` created isolated stacking context, trapping dropdown behind content. Fixed by removing `glass-card` from action bar, using solid background + `relative z-40`
+   - Export button toggle: added `stopPropagation` to prevent click-outside handler from immediately closing
+   - Missing `!response.ok` checks on code gen and A/B test API calls
+   - Removed useless `revokeObjectURL` calls on data: URLs
+
+2. **Codebase Modularization**
+   - Extracted from App.jsx (~2200 → ~1800 lines):
+     - `src/constants/brand.js` — BRAND color palette
+     - `src/constants/checklistLabels.js` — CHECKLIST_LABELS mapping
+     - `src/constants/loadingData.js` — Fun facts, step headers, loading phrases
+     - `src/utils/json.js` — safeParseJSON helper
+     - `src/utils/localStorage.js` — getSafe/setSafeLocalStorage
+     - `src/utils/clipboard.js` — Modern clipboard API with fallback
+     - `src/utils/learning.js` — Full learning system (~110 lines)
+   - Created folder structure: `src/constants/`, `src/utils/`, `src/utils/export/`, `src/hooks/`, `src/components/`
+
+3. **Multi-Format Export**
+   - `src/utils/export/xlsx.js` — Multi-sheet Excel workbook (5 sheets)
+   - `src/utils/export/docx.js` — Word document with title page, tables, recommendations
+   - `src/utils/export/txt.js` — Plain text with ASCII score bars
+   - `src/utils/export/jpeg.js` — JPEG screenshot via html2canvas
+   - Export dropdown reorganized into Documents/Data/Images sections
+
+4. **API Security Hardening**
+   - `api/_utils.js` — Shared `validateUrl()` (SSRF prevention) and `rateLimit()` (in-memory)
+   - `api/analyze.js` — Rate limiting, SSRF validation on all URLs, input length caps, enhanced HTML sanitization
+   - `api/chat.js` — systemInstruction length cap, history entry validation
+   - `api/generateCode.js` and `api/generateABTests.js` — Control character stripping
+   - `api/learnings.js` — DELETE endpoint protected with admin token
+
+5. **Other Changes**
+   - Deleted unused `src/App.css`
+   - Added `xlsx` and `docx` npm dependencies
+   - Updated `vite.config.js` with `@` path alias and `es2020` build target
+
+### Files Changed
+- `src/App.jsx` — Bug fixes, modular imports, export handlers, dropdown redesign
+- `src/constants/brand.js` (NEW)
+- `src/constants/checklistLabels.js` (NEW)
+- `src/constants/loadingData.js` (NEW)
+- `src/utils/json.js` (NEW)
+- `src/utils/localStorage.js` (NEW)
+- `src/utils/clipboard.js` (NEW)
+- `src/utils/learning.js` (NEW)
+- `src/utils/export/txt.js` (NEW)
+- `src/utils/export/jpeg.js` (NEW)
+- `src/utils/export/xlsx.js` (NEW)
+- `src/utils/export/docx.js` (NEW)
+- `api/_utils.js` (NEW)
+- `api/analyze.js`, `api/chat.js`, `api/generateCode.js`, `api/generateABTests.js`, `api/learnings.js` — Security updates
+- `vite.config.js`, `package.json` — Config and dependency updates
+- `src/App.css` (DELETED)
+
+### Deployment
+- Build verified: `npx vite build` passes
+- Pushed to main, auto-deployed to Vercel
+- All 5 endpoints confirmed working on production
+- Export dropdown verified working on live site
+
+---
+
 ## Session 9: v1.6.1 — March 19, 2026
 
 **Goal**: Replace the screenshot-based PDF export with a professional, programmatic document builder. Create a product vision document.

@@ -71,11 +71,17 @@ The PDF is generated entirely via jsPDF's programmatic API — no html2canvas sc
 
 **Page break strategy:** Every content block calls `ensureSpace(needed)` before rendering. If the remaining space on the current page is insufficient, a new page is added automatically. This completely prevents section cutting.
 
-### Other Export Formats
+### Other Export Formats (v1.7.0)
+- **Word (.docx)**: Professional document with title page, checklist table, recommendations (via `docx` library, lazy-loaded)
+- **Excel (.xlsx)**: Multi-sheet workbook — Executive Summary, Checklist Scores, Recommendations, Competitors, Page Scores (via `xlsx` library, lazy-loaded)
+- **Plain Text (.txt)**: ASCII-formatted report with score bars, zero dependencies
 - **PNG**: html2canvas screenshot of dashboard (dark theme preserved)
+- **JPEG**: html2canvas screenshot at 92% quality (via `src/utils/export/jpeg.js`)
 - **Markdown**: Structured text with all report sections
 - **CSV**: Recommendations table with all fields
 - **JSON**: Raw report object
+
+Export dropdown is organized into Documents/Data/Images sections with compact layout and max-height scroll.
 
 ### Print (window.print)
 Extensive `@media print` CSS converts the dark glassmorphism UI to a clean light theme. Glass cards, dark backgrounds, tables, SVG circles, and flip cards all transform to printer-friendly layouts.
@@ -129,7 +135,7 @@ The full GrowMe Basic Website Standards checklist is embedded as a string consta
 ## React Architecture
 
 ### Component Structure
-- **Single File**: All UI lives in `src/App.jsx` (~1600 lines). This is a project convention — do not split into components.
+- **Main UI**: `src/App.jsx` (~1800 lines). Constants, utilities, learning system, and export logic extracted to `src/constants/`, `src/utils/`, `src/utils/export/`. Future: extract hooks and components.
 - **Global Theme Object**: All colors in the `BRAND` constant.
 - **View Modes**: Grid (flip cards) / List (detailed rows).
 - **Safe Storage**: `getSafeLocalStorage` wrapper for SSR compatibility.
@@ -171,7 +177,7 @@ The full GrowMe Basic Website Standards checklist is embedded as a string consta
 If you are an AI assistant working on this codebase:
 
 1. **See CLAUDE.md** for the full context file with rules, schemas, and decisions.
-2. **API Keys**: Server-side only via `process.env.VITE_GEMINI_API_KEY`.
+2. **API Keys**: Server-side only via `process.env.GEMINI_API_KEY` (with `VITE_GEMINI_API_KEY` fallback).
 3. **Styling**: Tailwind + inline styles only. No external CSS files.
 4. **Animations**: CSS keyframes only. No Framer Motion.
 5. **Node Compatibility**: Pinned to Vite 5 for Node 18 support.
@@ -181,5 +187,5 @@ If you are an AI assistant working on this codebase:
 ## Future Integrations
 - **WebSockets**: Real-time streaming for report generation progress.
 - **Vector DB**: Storing CRO best practices for benchmarked industry scores.
-- **Competitor Scraping**: Actually scrape and analyze competitor URLs (currently accepted but not used).
+- ~~**Competitor Scraping**~~: Done in v1.3.0 — competitors are scraped and analyzed via a 4th AI call.
 - **Learning Analytics**: Dashboard showing how the system has improved over time (avg score trends, most common issues, insight count).

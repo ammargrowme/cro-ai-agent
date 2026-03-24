@@ -1,6 +1,6 @@
 # GROWAGENT — Vision & Purpose
 
-**Last updated**: 2026-03-19 (v1.6.0)
+**Last updated**: 2026-03-24 (v1.7.0)
 
 ---
 
@@ -48,7 +48,7 @@ The long-term vision is a platform where:
 
 ---
 
-## How It Works Today (v1.6.0)
+## How It Works Today (v1.7.0)
 
 ### The Audit Pipeline
 1. **Data Collection** — Scrapes the target URL's HTML, fetches Google PageSpeed performance metrics and a visual screenshot, scrapes competitor pages and additional site pages (all in parallel).
@@ -76,7 +76,7 @@ The long-term vision is a platform where:
    - Future audits receive context from all past audits
    - Recurring patterns across sites are detected and flagged
 
-5. **Export** — Professional PDF report, PNG screenshot, Markdown, CSV, and JSON exports available.
+5. **Export** — 9 export formats: PDF report, Word (.docx), Plain Text, Markdown, Excel (.xlsx), CSV, JSON, PNG screenshot, JPEG screenshot. Organized dropdown with Documents/Data/Images sections.
 
 ### Key Features
 - **Target Keywords**: Specify SEO keywords for alignment verification across all analysis

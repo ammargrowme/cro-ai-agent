@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-03-19 (v1.6.1)
+**Last updated**: 2026-03-24 (v1.7.0)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 
@@ -10,22 +10,32 @@
 
 ## YOUR FIRST TASK (Start Here)
 
-**Test v1.3.0 on production.** Open https://cro-ai-agent.vercel.app/ and run through this checklist:
+**Build the next feature.** v1.7.0 is stable and deployed. Pick from Phase 2 features below:
 
-1. Enter a URL (e.g., `growme.ca`) and click Analyze — verify the elapsed timer shows during analysis
-2. Verify the **CRO Checklist Audit** panel appears with 10 category scores (circular indicators)
-3. Verify **Critical Checklist Failures** shows red flag cards
-4. Verify each recommendation card (flip it) shows a **checklist reference** badge
-5. **Test competitor analysis**: Enter a URL with competitors (e.g., `growme.ca` vs `competitor.com`) — verify the Competitive Intelligence panel appears with comparisons
-6. Open the **AI Chat Terminal** — send a message — verify it responds coherently
-7. Ask the chat to "modify recommendation #1" — verify the dashboard updates live (merged, not replaced)
-8. **Test exports**: Click Export > PDF — verify loading indicator appears, then PDF downloads
-9. Run a **2nd audit** on a different URL — verify the header shows "1 past audit learned"
-10. **Test error recovery**: Verify the Error Boundary works (if an error occurs, a recovery screen appears)
-
-Report any failures as bugs in the "KNOWN BUGS" section below, then proceed to building new features.
+1. **Checklist Drill-Down** — Make checklist category circles clickable to show individual item pass/fail
+2. **Auto-Crawl Mode** — Extract internal links from main URL and auto-discover pages to analyze
+3. **Component Extraction** — Continue modularization: extract React hooks and UI components from App.jsx
 
 ---
+
+## COMPLETED (v1.7.0 — March 24, 2026)
+
+- [x] CRITICAL FIX: `additionalPagesArr` TDZ bug crashed app on every Analyze click
+- [x] CRITICAL FIX: `LOCAL_INSIGHTS_KEY` undefined in chat handler caused ReferenceError
+- [x] FIX: Export dropdown hidden behind content (backdrop-filter stacking context)
+- [x] FIX: Export button toggle closing immediately (missing stopPropagation)
+- [x] FIX: Useless revokeObjectURL on data: URLs (PNG/JPEG)
+- [x] FIX: Missing !response.ok checks on code gen and A/B test API calls
+- [x] Modularized App.jsx — extracted constants, utils, learning, exports to separate modules
+- [x] Multi-format export: Excel (.xlsx), Word (.docx), Plain Text (.txt), JPEG screenshot
+- [x] Export dropdown reorganized into Documents/Data/Images sections
+- [x] API security: SSRF prevention, rate limiting, input validation, control character stripping
+- [x] New api/_utils.js with shared validateUrl() and rateLimit()
+- [x] Protected DELETE endpoint in api/learnings.js with admin token
+- [x] Deleted unused src/App.css
+- [x] Added xlsx and docx npm dependencies
+- [x] Updated vite.config.js with @ path alias and es2020 build target
+- [x] Build verified, deployed to Vercel, all endpoints confirmed
 
 ## COMPLETED (v1.3.0 — March 18, 2026)
 
@@ -158,13 +168,18 @@ These features are implemented but need real-world testing with a Gemini API key
 
 ## KNOWN BUGS / ISSUES
 
-1. ~~**Competitor analysis is a no-op**~~ ✅ Fixed in v1.3.0 — Competitors are now scraped and analyzed via a 4th AI call.
+1. ~~**Competitor analysis is a no-op**~~ ✅ Fixed in v1.3.0
 2. **Chat `updated_report` can be partial** — Gemini sometimes returns incomplete report objects. The frontend JSON equality check prevents dashboard breakage, but the update is silently lost.
 3. **localStorage cap** — 20 audits / 50 insights is a soft cap. Heavy users could still bloat localStorage on older browsers.
 4. ~~**Print CSS missing for checklist panel**~~ ✅ Fixed in v1.2.1
-5. ~~**No retry for chat errors**~~ ✅ Fixed in v1.2.1 — Retry button now appears on error messages.
-6. ~~**Stale schema in App.jsx**~~ ✅ Fixed in v1.2.1 — Dead code removed.
-7. ~~**`fix.py` is orphaned**~~ ✅ Fixed in v1.2.1 — File deleted.
+5. ~~**No retry for chat errors**~~ ✅ Fixed in v1.2.1
+6. ~~**Stale schema in App.jsx**~~ ✅ Fixed in v1.2.1
+7. ~~**`fix.py` is orphaned**~~ ✅ Fixed in v1.2.1
+8. ~~**`additionalPagesArr` TDZ crash**~~ ✅ Fixed in v1.7.0
+9. ~~**`LOCAL_INSIGHTS_KEY` undefined in chat**~~ ✅ Fixed in v1.7.0
+10. ~~**Export dropdown hidden behind content**~~ ✅ Fixed in v1.7.0
+11. ~~**Export button closing immediately**~~ ✅ Fixed in v1.7.0
+12. ~~**Missing error checks on code gen/A/B test APIs**~~ ✅ Fixed in v1.7.0
 
 ---
 
@@ -179,4 +194,4 @@ These features are implemented but need real-world testing with a Gemini API key
 7. After testing, pick the next item from "NEXT FEATURES TO BUILD"
 
 ---
-*Last updated by Claude Opus 4.6 — March 18, 2026 (v1.2.1)*
+*Last updated by Claude Opus 4.6 — March 24, 2026 (v1.7.0)*

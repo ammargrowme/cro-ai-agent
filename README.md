@@ -28,7 +28,9 @@ GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) au
 - **Target Keywords**: Specify SEO keywords for alignment verification across all AI analysis.
 - **Priority-Based Strategy**: Generates prioritized recommendations mapped to checklist items.
 - **Developer Handoff**: Each recommendation includes an AI-generated **Code Patch** (HTML/Tailwind) and **A/B Test Variations**.
+- **Multi-Format Export**: 9 export formats — PDF, Word (.docx), Excel (.xlsx), Plain Text, Markdown, CSV, JSON, PNG, JPEG — organized in a Documents/Data/Images dropdown.
 - **Interactive Chat**: A real-time AI Strategist terminal that can update the live dashboard and extract reusable CRO insights.
+- **API Security**: SSRF prevention, rate limiting, input validation, and control character stripping on all endpoints.
 
 ---
 
@@ -48,7 +50,7 @@ GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) au
 ### 3. Understanding the Report
 - **Growth Score**: Overall CRO score (0-100) based on checklist compliance.
 - **CRO Checklist Audit**: 10 category scores with circular progress indicators. Red flags show critical failures.
-- **Recommendations**: 6 prioritized action items, each linked to specific checklist criteria.
+- **Recommendations**: Prioritized action items (3-10 based on issues found), each linked to specific checklist criteria.
 - **Click any card** to flip and see the solution, execution plan, and code generation tools.
 
 ### 4. The AI Chat Terminal
@@ -118,8 +120,10 @@ Key rules:
 - **Framework**: React 18+ (Vite 5 for wide Node compatibility)
 - **Styling**: Tailwind CSS (Custom components + Animations)
 - **Icons**: Lucide-React
-- **AI Backend**: Google Gemini 2.5 Flash API
+- **AI Backend**: Google Gemini 3 Flash Preview (analysis/chat), Gemini 2.5 Flash (code gen/A/B tests)
 - **Analytics**: Google PageSpeed Insights API
+- **Export**: jsPDF, docx, xlsx (SheetJS), html2canvas — all lazy-loaded
+- **Learning**: Upstash Redis (server) + localStorage (fallback)
 - **Deployment**: Vercel Serverless Functions
 
 ---
@@ -151,6 +155,8 @@ Key rules:
 - [x] Multi-page batch analysis (v1.6.0)
 - [x] Target keywords for SEO alignment (v1.6.0)
 - [x] Server-side learning persistence (Upstash Redis — v1.4.0)
+- [x] Multi-format export: PDF, Word, Excel, TXT, JPEG, PNG, MD, CSV, JSON (v1.7.0)
+- [x] Codebase modularization & API security hardening (v1.7.0)
 - [ ] Checklist drill-down (clickable category details)
 - [ ] Auto-crawl mode (discover pages automatically)
 - [ ] User authentication & Report history

@@ -46,12 +46,18 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - Learning badge in header shows count of past audits learned
 - All docs updated (CLAUDE.md, README, CHANGELOG, DEVELOPER.md, TODO.md)
 
-### v1.7.0 (March 24, 2026) — Modularization, Security, Multi-Format Export, Critical Bug Fix
+### v1.7.0 (March 24, 2026) — Modularization, Security, Multi-Format Export, Critical Bug Fixes
 - CRITICAL FIX: `additionalPagesArr` TDZ bug crashed the app on every Analyze click (ReferenceError)
+- CRITICAL FIX: `LOCAL_INSIGHTS_KEY` undefined in chat handler caused ReferenceError on every chat message
+- FIX: Export dropdown trapped behind content due to `glass-card` `backdrop-filter` stacking context — replaced with solid background + `z-40`
+- FIX: Export button toggle used `stopPropagation` to prevent click-outside handler from immediately closing menu
+- FIX: Removed useless `revokeObjectURL` calls on data: URLs (PNG/JPEG exports)
 - Modularized App.jsx: extracted constants, utilities, learning system, and export logic into `src/constants/`, `src/utils/`, `src/utils/export/`
 - Multi-format export: Excel (.xlsx), Word (.docx), Plain Text (.txt), JPEG screenshot
+- Export dropdown reorganized into Documents/Data/Images sections with compact layout and scroll support
 - API security hardening: SSRF prevention, rate limiting, input validation, control character stripping
 - New `api/_utils.js` with shared `validateUrl()` and `rateLimit()` functions
+- Protected DELETE endpoint in `api/learnings.js` with admin token
 - Fixed missing error checks on code gen and A/B test API calls
 - Deleted unused `src/App.css`
 - Added `xlsx` and `docx` npm dependencies
@@ -108,14 +114,14 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 
 **See `TODO.md` for the full prioritized action plan.** The top 3 items are:
 
-1. **Test v1.6.0 on production** — Run audits at https://cro-ai-agent.vercel.app/ to verify enhanced competitor analysis, multi-page scoring, and keyword alignment work end-to-end.
-2. **Checklist drill-down** — Make checklist category circles clickable to show individual item pass/fail.
-3. **Auto-crawl mode** — Extract internal links from main URL and auto-discover pages to analyze (vs manual entry).
+1. **Checklist drill-down** — Make checklist category circles clickable to show individual item pass/fail.
+2. **Auto-crawl mode** — Extract internal links from main URL and auto-discover pages to analyze (vs manual entry).
+3. **Component extraction** — Continue modularization: extract React hooks and UI components from App.jsx.
 
 ## Architecture
 
 ### Frontend (React 18 + Vite 5)
-- **Single file**: `src/App.jsx` (~2100 lines) — all UI, state management, and client logic
+- **Single file**: `src/App.jsx` (~1800 lines) — all UI, state management, and client logic (constants, utils, exports extracted to modules)
 - **Styling**: Tailwind CSS + inline styles via `BRAND` constant (no external CSS files)
 - **Animations**: Native CSS keyframes only (no Framer Motion)
 - **State**: React `useState`/`useEffect` hooks (no Redux/Zustand)
@@ -136,7 +142,7 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - After each audit, data is saved to BOTH server and localStorage
 - Chat insights are saved to BOTH server and localStorage
 - If server is unavailable, app gracefully degrades to localStorage-only
-- Helper functions in App.jsx: `getLocalLearnings()`, `saveLocalLearning()`, `saveServerLearning()`, `saveServerInsight()`, `fetchServerLearnings()`, `mergeLearnings()`
+- Helper functions in `src/utils/learning.js`: `getLocalLearnings()`, `saveLocalLearning()`, `saveServerLearning()`, `saveServerInsight()`, `fetchServerLearnings()`, `mergeLearnings()`, `trackChatModification()`
 
 ## CRO Checklist
 
@@ -245,10 +251,13 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 
 1. ~~**Competitor analysis is a no-op**~~ — Fixed in v1.3.0. Competitor URLs are now scraped and analyzed via a 4th AI call.
 2. **Chat `updated_report` can be partial** — Gemini sometimes returns incomplete report objects. The frontend checks JSON equality to avoid breaking state, but the update is silently lost.
-3. ~~**PDF export uses `window.print()`**~~ — Fixed in v1.6.1. PDF is now generated programmatically via jsPDF with professional light-themed layout, proper page breaks, cover page, section headers, tables, and page numbers. Print CSS also improved.
+3. ~~**PDF export uses `window.print()`**~~ — Fixed in v1.6.1. PDF is now generated programmatically via jsPDF.
 4. **localStorage learning cap** — 20 audits / 50 insights. Heavy users could still bloat localStorage on older browsers.
 5. ~~**No error state for chat**~~ — Fixed in v1.2.1. Retry button now appears on chat error messages.
 6. ~~**Stale schema in App.jsx**~~ — Fixed in v1.2.1. Dead code removed.
+7. ~~**`additionalPagesArr` TDZ crash**~~ — Fixed in v1.7.0. Variable used before declaration caused ReferenceError on every Analyze click.
+8. ~~**`LOCAL_INSIGHTS_KEY` undefined in chat**~~ — Fixed in v1.7.0. Non-exported const referenced in App.jsx.
+9. ~~**Export dropdown hidden behind content**~~ — Fixed in v1.7.0. `backdrop-filter` stacking context trapped the dropdown z-index.
 
 ## File Map
 

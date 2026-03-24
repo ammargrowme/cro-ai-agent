@@ -6,6 +6,10 @@ All notable changes to the GROWAGENT project will be documented in this file.
 
 ### Fixed
 - **CRITICAL: App crash on Analyze** — Fixed Temporal Dead Zone (TDZ) bug where `additionalPagesArr` was used before its `const` declaration in `handleAnalyze()`, causing a ReferenceError that prevented all URL analysis
+- **CRITICAL: Chat crash** — `LOCAL_INSIGHTS_KEY` was referenced in App.jsx but only defined as a non-exported const in `utils/learning.js`, causing ReferenceError on every chat message
+- **Export dropdown hidden behind content** — `glass-card`'s `backdrop-filter` created an isolated stacking context that trapped the dropdown's z-index. Replaced with solid background + `relative z-40`
+- **Export button closing immediately** — Added `stopPropagation` to prevent the click-outside listener from closing the menu on the same click that opens it
+- **Useless revokeObjectURL on data URLs** — Removed no-op `revokeObjectURL` calls on `canvas.toDataURL()` results in PNG/JPEG exports
 - **Silent API failures** — Added `!response.ok` error checks to `handleGenerateCodePatch` and `handleGenerateABTests` handlers
 - **Serverless setInterval issue** — Replaced module-level `setInterval` in `api/_utils.js` with inline cleanup during rate limit checks (serverless-safe)
 
@@ -17,6 +21,7 @@ All notable changes to the GROWAGENT project will be documented in this file.
 
 ### Changed
 - **App.jsx reduced by ~400 lines** — Extracted BRAND, CHECKLIST_LABELS, loading data, JSON parsing, localStorage helpers, clipboard, and entire learning system into separate modules
+- **Export dropdown redesigned** — Reorganized 9 export formats into Documents/Data/Images sections with compact layout, max-height scroll, and solid opaque background
 - **Vite config updated** — Added `@` path alias and `es2020` build target
 - **Deleted unused `src/App.css`** (606 bytes, never imported)
 
