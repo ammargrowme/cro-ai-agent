@@ -15,6 +15,24 @@ export default async function handler(req, res) {
   if (!systemInstruction || typeof systemInstruction !== 'string') {
     return res.status(400).json({ error: 'System instruction is required' });
   }
+  if (systemInstruction.length > 50000) {
+    return res.status(400).json({ error: 'System instruction too long (max 50000 chars)' });
+  }
+
+  // Validate each history entry has valid role and parts
+  const validRoles = ['user', 'model'];
+  for (let i = 0; i < history.length; i++) {
+    const entry = history[i];
+    if (!entry || typeof entry !== 'object') {
+      return res.status(400).json({ error: `Invalid history entry at index ${i}` });
+    }
+    if (!validRoles.includes(entry.role)) {
+      return res.status(400).json({ error: `Invalid role "${entry.role}" at history index ${i}. Must be "user" or "model".` });
+    }
+    if (!Array.isArray(entry.parts) || entry.parts.length === 0) {
+      return res.status(400).json({ error: `Invalid parts at history index ${i}. Must be a non-empty array.` });
+    }
+  }
 
   try {
     const model = "gemini-3-flash-preview";

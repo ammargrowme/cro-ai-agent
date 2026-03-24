@@ -1,238 +1,39 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-// html2canvas and jsPDF are lazy-loaded in export handlers to reduce initial bundle (~560KB savings)
+// html2canvas, jsPDF, xlsx, docx are lazy-loaded in export handlers to reduce initial bundle
 import {
-  Globe,
-  Search,
-  Activity,
-  CheckCircle2,
-  CheckCircle,
-  AlertCircle,
-  ArrowRight,
-  Zap,
-  TrendingUp,
-  MonitorSmartphone,
-  Eye,
-  Type,
-  MousePointerClick,
-  ShieldCheck,
-  LayoutTemplate,
-  ChevronRight,
-  RefreshCw,
-  Code,
-  Loader2,
-  Sparkles,
-  MessageSquare,
-  Send,
-  User,
-  Bot,
-  BarChart3,
-  Printer,
-  Download,
-  Lightbulb,
-  LayoutGrid,
-  List,
-  BarChart,
-  Plus,
-  Minus,
-  Swords,
-  Target,
-  BrainCircuit,
-  Settings2,
-  Crosshair,
-  Award,
-  Filter,
-  Play,
-  XCircle,
-  Terminal,
-  Key,
-  BookOpen,
-  Brain,
-  ClipboardCheck
+  Globe, Search, Activity, CheckCircle2, CheckCircle, AlertCircle, ArrowRight,
+  Zap, TrendingUp, MonitorSmartphone, Eye, Type, MousePointerClick, ShieldCheck,
+  LayoutTemplate, ChevronRight, RefreshCw, Code, Loader2, Sparkles, MessageSquare,
+  Send, User, Bot, BarChart3, Printer, Download, Lightbulb, LayoutGrid, List,
+  BarChart, Plus, Minus, Swords, Target, BrainCircuit, Settings2, Crosshair,
+  Award, Filter, Play, XCircle, Terminal, Key, BookOpen, Brain, ClipboardCheck,
+  FileText, FileSpreadsheet, FileType2
 } from "lucide-react";
 
-// Backend routes now handle AI logic.
-// VITE_GEMINI_API_KEY is now only used on the server (Vercel).
+// ─── Modular imports (extracted from monolith for maintainability) ───
+import { BRAND } from "./constants/brand";
+import { CHECKLIST_LABELS } from "./constants/checklistLabels";
+import { DEFAULT_FUN_FACTS, STEP_HEADERS, LOADING_PHRASES } from "./constants/loadingData";
+import { safeParseJSON } from "./utils/json";
+import { getSafeLocalStorage, setSafeLocalStorage } from "./utils/localStorage";
+import { copyToClipboard } from "./utils/clipboard";
+import {
+  getLocalLearnings, saveLocalLearning, addLocalInsight,
+  saveServerLearning, saveServerInsight, fetchServerLearnings,
+  mergeLearnings, trackChatModification
+} from "./utils/learning";
+import { exportTXT } from "./utils/export/txt";
+import { exportJPEG } from "./utils/export/jpeg";
+import { exportXLSX } from "./utils/export/xlsx";
+import { exportDOCX } from "./utils/export/docx";
 
-// --- BRANDING CONSTANTS ---
-const BRAND = {
-  primary: "#F25430",
-  primaryHover: "#D94A2A",
-  primaryGlow: "rgba(242, 84, 48, 0.15)",
-  bgBase: "#08090D",
-  bgSurface: "#12151B",
-  bgSurfaceHighlight: "#1E222A",
-  bgCard: "#161920",
-  textMain: "#FFFFFF",
-  textMuted: "#8B95A5",
-  textDim: "#5A6270",
-  accentSuccess: "#34D399",
-  accentWarning: "#FBBF24",
-  accentDanger: "#F87171",
-  borderSubtle: "#1E222A",
-  borderHover: "#2A2F3A"
-};
-
-// --- SCHEMA NOTE ---
-// Report schema is defined server-side in api/analyze.js (OVERVIEW_SCHEMA, RECOMMENDATIONS_SCHEMA, CHECKLIST_SCHEMA).
+// Report schema is defined server-side in api/analyze.js.
 // See CLAUDE.md "Report Schema" section for the full structure.
 
-const DEFAULT_FUN_FACTS = [
-  "A 1-second delay in page load time can yield a 7% reduction in conversions.",
-  "User judgments on website credibility are 75% based on overall aesthetics.",
-  "Personalized calls-to-action convert 202% better than default versions.",
-  "Frictionless checkout processes can increase conversion rates by up to 35%."
-];
+// Learning system, constants, and utilities are imported from src/constants/ and src/utils/
 
-// --- SAFE JSON PARSING HELPER ---
-const safeParseJSON = (text) => {
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    return JSON.parse(text);
-  } catch (e) {
-    throw new Error("Failed to parse JSON from AI response.");
-  }
-};
-
-// --- SAFE LOCAL STORAGE HELPER ---
-const getSafeLocalStorage = (key) => {
-  try { return localStorage.getItem(key) || ""; } catch (e) { return ""; }
-};
-const setSafeLocalStorage = (key, value) => {
-  try { localStorage.setItem(key, value); } catch (e) { }
-};
-
-// --- LEARNING SYSTEM (Server-Side + Local Fallback) ---
-// Server-side: All users contribute to a shared knowledge base via /api/learnings (Upstash Redis)
-// Local: localStorage is kept as a cache and fallback if the server is unavailable
-const LOCAL_LEARNINGS_KEY = "growagent_learnings";
-const LOCAL_INSIGHTS_KEY = "growagent_insights";
-
-// Local helpers (kept as fallback)
-const getLocalLearnings = () => {
-  try {
-    const raw = localStorage.getItem(LOCAL_LEARNINGS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) { return []; }
-};
-
-const buildLearningEntry = (auditResult) => ({
-  url: auditResult.audit_metadata?.url || "unknown",
-  score: auditResult.overall_score,
-  timestamp: auditResult.audit_metadata?.timestamp || new Date().toISOString(),
-  topIssues: (auditResult.recommendations || []).slice(0, 3).map(r => r.issue),
-  topCategories: (auditResult.recommendations || []).slice(0, 3).map(r => r.category),
-  checklistWeaknesses: Object.entries(auditResult.checklist_scores || {})
-    .filter(([, v]) => v < 50)
-    .map(([k]) => k.replace(/_/g, ' ')),
-  checklistStrengths: Object.entries(auditResult.checklist_scores || {})
-    .filter(([, v]) => v >= 80)
-    .map(([k]) => k.replace(/_/g, ' ')),
-  allChecklistScores: auditResult.checklist_scores || {},
-  criticalFlags: (auditResult.checklist_flags || []).slice(0, 3),
-  feedbackInsights: [],
-  chatModifications: 0
-});
-
-const saveLocalLearning = (auditResult) => {
-  try {
-    const learnings = getLocalLearnings();
-    const entry = buildLearningEntry(auditResult);
-    learnings.push(entry);
-    localStorage.setItem(LOCAL_LEARNINGS_KEY, JSON.stringify(learnings.slice(-20)));
-    return entry;
-  } catch (e) { return null; }
-};
-
-const addLocalInsight = (insight) => {
-  try {
-    const insights = JSON.parse(localStorage.getItem(LOCAL_INSIGHTS_KEY) || "[]");
-    insights.push({ text: insight, timestamp: new Date().toISOString() });
-    localStorage.setItem(LOCAL_INSIGHTS_KEY, JSON.stringify(insights.slice(-50)));
-  } catch (e) {}
-};
-
-// Server-side learning helpers (fire-and-forget saves, non-blocking)
-const saveServerLearning = (auditResult) => {
-  const entry = buildLearningEntry(auditResult);
-  fetch('/api/learnings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'audit', data: entry })
-  }).catch(() => {}); // Silent fail — localStorage is the backup
-};
-
-const saveServerInsight = (insightText, sourceUrl) => {
-  fetch('/api/learnings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'insight', data: { text: insightText, sourceUrl: sourceUrl || "" } })
-  }).catch(() => {}); // Silent fail
-};
-
-const fetchServerLearnings = async () => {
-  try {
-    const res = await fetch('/api/learnings');
-    if (!res.ok) throw new Error("Server learnings unavailable");
-    return await res.json();
-  } catch (e) {
-    return { learnings: [], insights: [], totalLearnings: 0, totalInsights: 0 };
-  }
-};
-
-// Merge local + server learnings, deduplicate by url+timestamp
-const mergeLearnings = (localLearnings, serverData) => {
-  const serverLearnings = serverData.learnings || [];
-  const seen = new Set();
-  const merged = [];
-  // Server learnings first (shared knowledge), then local
-  for (const entry of [...serverLearnings, ...localLearnings]) {
-    const key = `${entry.url}|${entry.timestamp}`;
-    if (!seen.has(key)) { seen.add(key); merged.push(entry); }
-  }
-
-  // Merge insights
-  const localInsights = JSON.parse(localStorage.getItem(LOCAL_INSIGHTS_KEY) || "[]");
-  const serverInsights = (serverData.insights || []).map(i => typeof i === 'string' ? JSON.parse(i) : i);
-  const allInsightTexts = [...new Set([...serverInsights, ...localInsights].map(i => i.text))].slice(-20);
-
-  // Attach insights to the last learning entry for prompt inclusion
-  if (allInsightTexts.length > 0 && merged.length > 0) {
-    merged[merged.length - 1].feedbackInsights = allInsightTexts;
-  }
-
-  return merged;
-};
-
-// Track when chat modifies the report
-const trackChatModification = () => {
-  try {
-    const learnings = getLocalLearnings();
-    if (learnings.length > 0) {
-      learnings[learnings.length - 1].chatModifications = (learnings[learnings.length - 1].chatModifications || 0) + 1;
-      localStorage.setItem(LOCAL_LEARNINGS_KEY, JSON.stringify(learnings));
-    }
-  } catch (e) {}
-};
-
-// --- CHECKLIST CATEGORY LABELS ---
-const CHECKLIST_LABELS = {
-  seo_alignment: "SEO & Keywords",
-  above_the_fold: "Above the Fold",
-  cta_focus: "CTA & Conversion",
-  content_structure: "Content Structure",
-  visual_hierarchy: "Visual Hierarchy",
-  mobile_optimization: "Mobile",
-  trust_proof: "Trust & Proof",
-  forms_interaction: "Forms",
-  performance_qa: "Performance & QA",
-  content_standards: "Content Standards"
-};
-
-// --- ICONS AND UI CATEGORIZATION ---
+// Icon helper for recommendation categories
 const getIconForCategory = (category, size = 18) => {
   if (!category) return <Type size={size} />;
   const cat = category.toLowerCase();
@@ -246,40 +47,6 @@ const getIconForCategory = (category, size = 18) => {
   if (cat.includes('design') || cat.includes('visual')) return <Eye size={size} />;
   if (cat.includes('copy') || cat.includes('content')) return <Type size={size} />;
   return <Type size={size} />;
-};
-
-const STEP_HEADERS = [
-  "Extracting Source Architecture",
-  "Processing Visual Hierarchy",
-  "Evaluating Core Web Vitals",
-  "Synthesizing Revenue Strategy",
-  "Finalizing Growth Report"
-];
-
-const LOADING_PHRASES = [
-  "Parsing HTML structure & headings...", "Checking CTA placement above the fold...", "Evaluating mobile tap targets (44px min)...",
-  "Scanning for trust signals & reviews...", "Analyzing content readability & flow...", "Checking form labels & validation...",
-  "Measuring hero section height ratio...", "Detecting FAQ & social proof sections...", "Scoring against 50+ checklist criteria...",
-  "Comparing against past audit patterns...", "Extracting SEO meta & keyword data...", "Evaluating visual hierarchy & whitespace..."
-];
-
-// --- CLIPBOARD HELPER (replaces deprecated execCommand) ---
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // Fallback for older browsers / non-HTTPS
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); } catch { }
-    document.body.removeChild(ta);
-    return true;
-  }
 };
 
 // --- ERROR BOUNDARY ---
@@ -412,6 +179,7 @@ function AppContent() {
     const hasCompetitors = competitorsInput.trim().length > 0;
     const competitorCount = competitorsInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).length;
     const hostname = (() => { try { return new URL(formattedUrl).hostname; } catch { return formattedUrl; } })();
+    const additionalPagesArr = additionalPagesInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 4).map(p => p.startsWith('http') ? p : `https://${p}`);
     const hasPages = additionalPagesArr.length > 0;
     const dynamicSteps = [
       { id: 'scrape', label: `Scraping ${hostname}${hasPages ? ` + ${additionalPagesArr.length} page${additionalPagesArr.length > 1 ? 's' : ''}` : ''}${hasCompetitors ? ` + ${competitorCount} competitor${competitorCount > 1 ? 's' : ''}` : ''}...`, icon: <Code size={18} />, detail: 'Fetching HTML, removing scripts & styles' },
@@ -427,8 +195,6 @@ function AppContent() {
     try {
       setCurrentStep(0);
       const competitors = competitorsInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 2);
-      
-      const additionalPagesArr = additionalPagesInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 4).map(p => p.startsWith('http') ? p : `https://${p}`);
 
       const payload = {
         url: formattedUrl,
@@ -615,6 +381,7 @@ Your job:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt })
       });
+      if (!response.ok) throw new Error(`Code generation failed (${response.status})`);
       const data = await response.json();
       let codeText = data.text;
       const codeBlockRegex = new RegExp('\`{3}[a-zA-Z]*\\n?', 'gi');
@@ -635,6 +402,7 @@ Your job:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt })
       });
+      if (!response.ok) throw new Error(`A/B test generation failed (${response.status})`);
       const variations = await response.json();
       setAbTests(prev => ({ ...prev, [rec.id]: { loading: false, variations: variations } }));
     } catch (error) {
@@ -1118,6 +886,40 @@ Your job:
     a.download = `GrowAgent_${new URL(url).hostname}_Recommendations.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  // ─── New export format handlers (lazy-loaded) ─────────────
+  const handleExportTXT = () => {
+    if (!report) return;
+    setShowExportMenu(false);
+    try { exportTXT(report, url); } catch (err) { setAppError("TXT export failed."); }
+  };
+
+  const handleExportJPEG = async () => {
+    if (!reportDashboardRef.current || !report) return;
+    setShowExportMenu(false);
+    setIsExporting(true);
+    try { await exportJPEG(reportDashboardRef, url); }
+    catch (err) { setAppError("JPEG export failed."); }
+    finally { setIsExporting(false); }
+  };
+
+  const handleExportXLSX = async () => {
+    if (!report) return;
+    setShowExportMenu(false);
+    setIsExporting(true);
+    try { await exportXLSX(report, url); }
+    catch (err) { console.error("XLSX export error:", err); setAppError("Excel export failed."); }
+    finally { setIsExporting(false); }
+  };
+
+  const handleExportDOCX = async () => {
+    if (!report) return;
+    setShowExportMenu(false);
+    setIsExporting(true);
+    try { await exportDOCX(report, url); }
+    catch (err) { console.error("DOCX export error:", err); setAppError("Word export failed."); }
+    finally { setIsExporting(false); }
   };
 
   const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setTargetKeywords(""); setAdditionalPagesInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); setShowExportMenu(false); };
@@ -1843,6 +1645,19 @@ Your job:
                       </button>
                       <button onClick={handleExportJSON} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
                         <Download size={14} className="text-[#5A6270]" /> JSON (Raw Data)
+                      </button>
+                      <div className="border-t-2 border-[#2A2F3A] my-1"></div>
+                      <button onClick={handleExportXLSX} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors">
+                        <FileSpreadsheet size={14} className="text-[#34D399]" /> Excel (.xlsx)
+                      </button>
+                      <button onClick={handleExportDOCX} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
+                        <FileText size={14} className="text-[#60A5FA]" /> Word (.docx)
+                      </button>
+                      <button onClick={handleExportTXT} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
+                        <FileType2 size={14} className="text-[#8B95A5]" /> Plain Text (.txt)
+                      </button>
+                      <button onClick={handleExportJPEG} className="w-full px-4 py-3 text-left text-sm font-bold text-white hover:bg-[#1A1E26] flex items-center gap-3 transition-colors border-t border-[#1E222A]">
+                        <Download size={14} className="text-[#FBBF24]" /> JPEG Screenshot
                       </button>
                     </div>
                   )}

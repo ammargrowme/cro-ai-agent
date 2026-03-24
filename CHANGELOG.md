@@ -2,6 +2,24 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.7.0] - 2026-03-24
+
+### Fixed
+- **CRITICAL: App crash on Analyze** — Fixed Temporal Dead Zone (TDZ) bug where `additionalPagesArr` was used before its `const` declaration in `handleAnalyze()`, causing a ReferenceError that prevented all URL analysis
+- **Silent API failures** — Added `!response.ok` error checks to `handleGenerateCodePatch` and `handleGenerateABTests` handlers
+- **Serverless setInterval issue** — Replaced module-level `setInterval` in `api/_utils.js` with inline cleanup during rate limit checks (serverless-safe)
+
+### Added
+- **Multi-format export**: Excel (.xlsx), Word (.docx), Plain Text (.txt), and JPEG screenshot exports alongside existing PDF and Markdown
+- **Modular architecture**: Extracted constants, utilities, and export logic from App.jsx monolith into focused modules (`src/constants/`, `src/utils/`, `src/utils/export/`)
+- **API security hardening**: SSRF prevention (`validateUrl`), in-memory rate limiting, input length caps, control character stripping, chat history validation, admin-only DELETE endpoint
+- **Shared security utilities**: New `api/_utils.js` with `validateUrl()` and `rateLimit()` functions
+
+### Changed
+- **App.jsx reduced by ~400 lines** — Extracted BRAND, CHECKLIST_LABELS, loading data, JSON parsing, localStorage helpers, clipboard, and entire learning system into separate modules
+- **Vite config updated** — Added `@` path alias and `es2020` build target
+- **Deleted unused `src/App.css`** (606 bytes, never imported)
+
 ## [1.6.1] - 2026-03-19
 ### Changed
 - **Professional PDF Export**: Completely replaced the html2canvas screenshot-based PDF with a programmatic jsPDF document builder. New PDF features a branded cover page with score display, section headers with accent bars, executive summary, checklist score table with visual bars, critical failures callout block, competitor comparison matrix, page scores table, structured recommendation cards with two-column impact/implementation layout, and consistent page numbers/headers/footers across all pages. Light professional theme (white background) — no more dark screenshots.

@@ -59,8 +59,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ learnings, insights, totalLearnings, totalInsights });
     }
 
-    // ── DELETE: Clear all learnings (admin use) ──
+    // ── DELETE: Clear all learnings (admin use, token-protected) ──
     if (req.method === 'DELETE') {
+      if (req.headers['x-admin-token'] !== process.env.ADMIN_TOKEN) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
       await redis.del(LEARNINGS_KEY);
       await redis.del(INSIGHTS_KEY);
       return res.status(200).json({ ok: true, message: 'All learnings and insights cleared.' });

@@ -1,4 +1,6 @@
 
+import { validateUrl, rateLimit } from './_utils.js';
+
 const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
 
 // ─── CRO CHECKLIST (from GrowMe Basic Website Standards) ──────────
@@ -93,6 +95,10 @@ const sanitizeHtml = (rawHtml) => {
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
     .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '[ICON]')
     .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+    .replace(/<embed\b[^>]*\/?>/gi, '')
+    .replace(/<applet\b[^<]*(?:(?!<\/applet>)<[^<]*)*<\/applet>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<link\b[^>]*\/?>/gi, '')
     .replace(/class="[^"]*"/gi, '')
@@ -325,14 +331,46 @@ const PER_PAGE_SCHEMA = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
+  // ── Rate limiting (best-effort, resets on cold start) ──
+  if (!rateLimit(req, 5)) {
+    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
+  }
+
   const { url, context, competitors, customPageSpeedKey, pastLearnings, targetKeywords, additionalPages } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
-  // Validate URL format
-  try {
-    new URL(url);
-  } catch {
-    return res.status(400).json({ error: 'Invalid URL format' });
+  // ── Validate primary URL (scheme + SSRF check) ──
+  const urlCheck = validateUrl(url);
+  if (!urlCheck.valid) {
+    return res.status(400).json({ error: urlCheck.error });
+  }
+
+  // ── Validate competitor URLs ──
+  if (competitors && Array.isArray(competitors)) {
+    for (const compUrl of competitors) {
+      const compCheck = validateUrl(compUrl);
+      if (!compCheck.valid) {
+        return res.status(400).json({ error: `Invalid competitor URL (${compUrl}): ${compCheck.error}` });
+      }
+    }
+  }
+
+  // ── Validate additional page URLs ──
+  if (additionalPages && Array.isArray(additionalPages)) {
+    for (const pageUrl of additionalPages) {
+      const pageCheck = validateUrl(pageUrl);
+      if (!pageCheck.valid) {
+        return res.status(400).json({ error: `Invalid additional page URL (${pageUrl}): ${pageCheck.error}` });
+      }
+    }
+  }
+
+  // ── Input length caps ──
+  if (context && context.length > 2000) {
+    return res.status(400).json({ error: 'Context too long (max 2000 chars)' });
+  }
+  if (targetKeywords && targetKeywords.length > 500) {
+    return res.status(400).json({ error: 'Target keywords too long (max 500 chars)' });
   }
 
   const logId = Math.random().toString(36).substring(7);

@@ -14,12 +14,15 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Prompt too long (max 5000 chars)' });
   }
 
+  // Strip control characters from prompt
+  const cleanPrompt = prompt.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+
   try {
     const model = "gemini-2.5-flash";
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts: [{ text: cleanPrompt }] }],
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: { type: "ARRAY", items: { type: "STRING" } }

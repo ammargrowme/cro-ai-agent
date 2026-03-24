@@ -4,7 +4,7 @@
 
 ## Quick Status
 
-- **Version**: 1.6.0 (March 19, 2026)
+- **Version**: 1.7.0 (March 24, 2026)
 - **Live URL**: https://cro-ai-agent.vercel.app/
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
@@ -45,6 +45,17 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - Recommendations increased from 5 to 6 with `checklist_ref` field
 - Learning badge in header shows count of past audits learned
 - All docs updated (CLAUDE.md, README, CHANGELOG, DEVELOPER.md, TODO.md)
+
+### v1.7.0 (March 24, 2026) — Modularization, Security, Multi-Format Export, Critical Bug Fix
+- CRITICAL FIX: `additionalPagesArr` TDZ bug crashed the app on every Analyze click (ReferenceError)
+- Modularized App.jsx: extracted constants, utilities, learning system, and export logic into `src/constants/`, `src/utils/`, `src/utils/export/`
+- Multi-format export: Excel (.xlsx), Word (.docx), Plain Text (.txt), JPEG screenshot
+- API security hardening: SSRF prevention, rate limiting, input validation, control character stripping
+- New `api/_utils.js` with shared `validateUrl()` and `rateLimit()` functions
+- Fixed missing error checks on code gen and A/B test API calls
+- Deleted unused `src/App.css`
+- Added `xlsx` and `docx` npm dependencies
+- Updated vite.config.js with `@` path alias and `es2020` build target
 
 ### v1.6.0 (March 19, 2026) — Enhanced Competitor Analysis + Multi-Page + Keywords
 - Enhanced competitor analysis with comparison matrix table (side-by-side checklist scores) and steal-worthy ideas
@@ -243,13 +254,28 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 
 ```
 ├── api/
-│   ├── analyze.js          # Main audit pipeline (scrape + PageSpeed + 3 AI calls)
+│   ├── _utils.js           # Shared security utilities (validateUrl, rateLimit)
+│   ├── analyze.js          # Main audit pipeline (scrape + PageSpeed + 3-5 AI calls)
 │   ├── chat.js             # Interactive chat endpoint (message + report updates + learning)
 │   ├── learnings.js        # Server-side learning persistence (Upstash Redis GET/POST)
 │   ├── generateCode.js     # Code patch generator (Tailwind CSS)
 │   └── generateABTests.js  # A/B copy variation generator
 ├── src/
-│   ├── App.jsx             # Entire frontend (~2200 lines, single file)
+│   ├── constants/
+│   │   ├── brand.js        # BRAND color palette object
+│   │   ├── checklistLabels.js # CHECKLIST_LABELS mapping
+│   │   └── loadingData.js  # Fun facts, step headers, loading phrases
+│   ├── utils/
+│   │   ├── clipboard.js    # Modern clipboard API with fallback
+│   │   ├── json.js         # safeParseJSON helper
+│   │   ├── learning.js     # Full learning system (local + server)
+│   │   ├── localStorage.js # getSafe/setSafeLocalStorage
+│   │   └── export/
+│   │       ├── docx.js     # Word document export
+│   │       ├── jpeg.js     # JPEG screenshot export
+│   │       ├── txt.js      # Plain text export
+│   │       └── xlsx.js     # Excel workbook export
+│   ├── App.jsx             # Main frontend (~1800 lines, imports from modules)
 │   └── main.jsx            # React entry point
 ├── public/                 # Static assets
 ├── CLAUDE.md               # THIS FILE — read first
@@ -257,13 +283,13 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 ├── TODO.md                 # Action plan — read second
 ├── CHANGELOG.md            # Version history
 ├── DEVELOPER.md            # Technical deep-dive (pipeline, learning, chat protocol)
-├── IMPLEMENTATION_RECAP.md # Session recaps (v1.1.0 + v1.2.0)
+├── IMPLEMENTATION_RECAP.md # Session recaps
 ├── README.md               # User-facing docs
 ├── vercel.json             # Vercel config (300s timeout)
-├── vite.config.js          # Vite 5 config
+├── vite.config.js          # Vite 5 config (@ alias, es2020 target)
 ├── tailwind.config.js      # Tailwind config
 ├── .env.example            # Env template
-└── package.json            # Dependencies (React 18, Vite 5, Tailwind, Lucide)
+└── package.json            # Dependencies (React 18, Vite 5, Tailwind, Lucide, xlsx, docx)
 ```
 
 ## Rules for AI Agents
@@ -273,7 +299,7 @@ For production: Push to `main` — Vercel auto-deploys at https://cro-ai-agent.v
 3. **Do not add external CSS files** — use Tailwind or inline styles
 4. **Do not use Framer Motion** — use CSS keyframes
 5. **API keys must stay server-side** — never expose in frontend code
-6. **Keep App.jsx as a single file** — do not split into components (project convention)
+6. **App.jsx is the main UI file** — constants, utilities, and export logic are in `src/constants/`, `src/utils/`, `src/utils/export/`. Future: extract hooks and components
 7. **Test builds with `npx vite build`** before committing
 8. **The learning system is server-side (Vercel Redis) + local fallback** — requires `REDIS_URL` env var (auto-injected by Vercel)
 9. **Always read TODO.md** before starting new work — it has the prioritized plan
