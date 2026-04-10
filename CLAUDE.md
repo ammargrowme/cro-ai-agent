@@ -1,3 +1,13 @@
+---
+type: project
+title: "CRO AI Agent"
+stack: "React/Vite/Gemini"
+status: stable
+version: "v1.7.0"
+asana_gid: null
+updated: 2026-04-10
+---
+
 # CLAUDE.md — GROWAGENT CRO AI Agent
 
 **READ THIS FIRST.** This file provides full project context for any AI assistant (Claude, GPT, Cursor, Windsurf, etc.) working on this codebase. Then read `TODO.md` for the exact action plan.
@@ -371,3 +381,28 @@ After making ANY code change, you MUST update the following files before committ
 - **Major** (x.0.0): Breaking changes (new auth system, database migration)
 
 **The goal**: Any AI or human picking up this repo at any point in time can read these files and know EXACTLY what the project state is, what was done, what works, what's broken, and what to do next — without needing any conversation history.
+
+---
+
+## Resume Point
+
+| Field | Value |
+|-------|-------|
+| **Last session date** | 2026-03-24 |
+| **What was done** | v1.7.0 released — critical TDZ bug fix (additionalPagesArr), LOCAL_INSIGHTS_KEY fix, export dropdown z-index fix, modularization (constants/utils/export extracted), multi-format export (Excel, Word, Text, JPEG), API security hardening (SSRF, rate limiting, input validation). All critical bugs resolved. |
+| **Next step** | Checklist drill-down (make category circles clickable for item pass/fail), auto-crawl mode (discover internal pages automatically), component extraction (React hooks and UI components from App.jsx). See TODO.md for full plan. |
+| **Blockers** | None |
+
+---
+
+## Mandatory Docs
+
+> **Update ALL of the following with every code change, before committing. No exceptions.**
+
+- [ ] **CHANGELOG.md** — Add entry under current version's Added/Changed/Fixed sections
+- [ ] **TODO.md** — Move completed items, add new bugs, update priorities
+- [ ] **CLAUDE.md** — Update Quick Status, Session History, What To Do Next, Known Issues, File Map
+- [ ] **IMPLEMENTATION_RECAP.md** — Add new session section documenting what was built and why
+- [ ] **DEVELOPER.md** — Update if architecture, data flow, or protocols changed
+- [ ] **README.md** — Update if user-facing features changed
+- [ ] **VISION.md** — Update if product capabilities or roadmap changed
