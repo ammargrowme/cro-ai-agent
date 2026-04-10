@@ -2,6 +2,15 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [Docs] - 2026-04-10
+
+### Changed
+- **CLAUDE.md trimmed from 407 to 210 lines** — Extracted reference data into 4 standalone docs/ files for token efficiency
+- **Created docs/ARCHITECTURE.md** — Frontend, backend, learning system, CRO checklist, technical decisions
+- **Created docs/SCHEMAS.md** — Report schema + Chat response schema with JSON examples
+- **Created docs/FILE-MAP.md** — Complete directory structure with file descriptions
+- **Created docs/KNOWN-ISSUES.md** — Active issues, resolved issues, lessons learned
+
 ## [1.7.0] - 2026-03-24
 
 ### Fixed
