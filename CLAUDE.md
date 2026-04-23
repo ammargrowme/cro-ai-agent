@@ -5,7 +5,7 @@ stack: "React/Vite/Gemini"
 status: stable
 version: "v1.7.0"
 asana_gid: null
-updated: 2026-04-10
+updated: 2026-04-22
 ---
 
 # CLAUDE.md — GROWAGENT CRO AI Agent
