@@ -1,6 +1,6 @@
 # GROWAGENT — Vision & Purpose
 
-**Last updated**: 2026-03-24 (v1.7.0)
+**Last updated**: 2026-05-12 (v1.8.0)
 
 ---
 
@@ -48,39 +48,56 @@ The long-term vision is a platform where:
 
 ---
 
-## How It Works Today (v1.7.0)
+## How It Works Today (v1.8.0)
 
 ### The Audit Pipeline
-1. **Data Collection** — Scrapes the target URL's HTML, fetches Google PageSpeed performance metrics and a visual screenshot, scrapes competitor pages and additional site pages (all in parallel).
+1. **Page Discovery (NEW v1.8.0)** — If the operator enters just a domain, GROWAGENT calls `/api/discover` which cascades through `sitemap.xml` → `sitemap_index.xml` → `Sitemap:` directive in `robots.txt` → homepage link crawl with depth-1 BFS through priority paths (/about, /services, /contact, /pricing). Returns up to 25 same-origin URLs, prioritized intelligently. The operator can preview and deselect URLs before the audit fires.
 
-2. **AI Analysis** — Runs 3-5 parallel AI calls using Google Gemini:
+2. **Data Collection** — Scrapes the target URL plus up to 25 additional pages (raised from 4 in v1.8.0) and any competitor pages in parallel. Fetches Google PageSpeed performance metrics and a visual screenshot. Each scrape preserves both sanitized HTML (for AI) and raw HTML (for static extraction).
+
+3. **Static Health Audit (NEW v1.8.0)** — Pure-JS analysis before any AI call:
+   - **Link extraction**: every `<a href>` parsed with CTA detection, phone-label detection, external/internal flags
+   - **Button extraction**: `<button>`, `<input type=submit|button>`, `role="button"` elements
+   - **Form extraction**: every `<form>` broken down into fields with label/required/inline-label/validation-pattern metadata
+   - **URL health check**: HEAD-checks every link (concurrency 10, GET-with-Range fallback for 405/403)
+   - **CTA issue detection**: empty hrefs, phone CTAs missing `tel:`, generic CTA copy
+
+4. **AI Analysis** — Runs 4-6 parallel Gemini calls. Every prompt injects the `CXL_PRINCIPLES` constant (persuasive design, awareness levels, friction taxonomy, Relevance/Trust/Stimulance heuristics, fast/slow thinking, copywriting principles) alongside the GrowMe Basic Website Standards checklist:
    - **Overview**: Overall score, summary, strengths, quick wins
-   - **Recommendations**: Prioritized action items with implementation details
-   - **Checklist Scoring**: 10-category scoring against the GrowMe CRO Standards (50+ criteria)
+   - **Recommendations**: Prioritized action items, with `staticFindings` appendix (broken URLs, CTA mismatches, form-friction flags) passed as ground truth so recs cite specific evidence
+   - **Checklist Scoring**: 10-category scoring (0-100 each) plus top 5 critical failures
    - **Competitor Analysis** (when competitors provided): Side-by-side scoring, strategy comparison, steal-worthy ideas
-   - **Per-Page Scoring** (when multiple pages provided): Individual page scores with page type detection
+   - **Per-Page Scoring** (batched in v1.8.0): Splits the page list into groups of 5 and scores each batch in parallel so 25-page audits don't overflow Gemini's response budget
+   - **Form Friction (NEW v1.8.0)**: Applies CXL form-friction rules to extracted form fields. Returns per-form friction score (0-100), top friction points, concrete fixes
 
-3. **Report Delivery** — All results merge into a single interactive dashboard with:
+5. **Report Delivery** — All results merge into a single interactive dashboard with:
    - Overall Growth Score (0-100)
    - CRO Checklist with 10 category scores and critical failure flags
+   - **Link Health card** (v1.8.0): broken URLs with link text, status, and origin pages
+   - **CTA Audit card** (v1.8.0): empty hrefs, phone-CTA mismatches, generic copy
+   - **Form Friction card** (v1.8.0): per-form friction score, top friction points, CXL-grounded recommendations
+   - **Pages Audited chip list** (v1.8.0): every URL the audit covered
    - Prioritized recommendation cards (flip to reveal solutions)
    - Competitor comparison matrix with visual score differences
    - Site-wide page score grid
    - Code patch generator (Tailwind CSS) per recommendation
    - A/B test copy generator per recommendation
-   - AI Strategy Chat terminal for follow-up questions
+   - AI Strategy Chat terminal for follow-up questions — now CXL-grounded
 
-4. **Learning System** — After every audit:
-   - Key findings are saved to a shared knowledge base (Upstash Redis)
+6. **Learning System** — After every audit:
+   - Key findings saved to a shared knowledge base (Upstash Redis)
    - Chat conversations extract reusable CRO insights
    - Future audits receive context from all past audits
    - Recurring patterns across sites are detected and flagged
 
-5. **Export** — 9 export formats: PDF report, Word (.docx), Plain Text, Markdown, Excel (.xlsx), CSV, JSON, PNG screenshot, JPEG screenshot. Organized dropdown with Documents/Data/Images sections.
+7. **Export** — 9 export formats: PDF report, Word (.docx), Plain Text, Markdown, Excel (.xlsx), CSV, JSON, PNG screenshot, JPEG screenshot.
 
 ### Key Features
+- **Just-a-domain audits**: feed GROWAGENT a single URL and it auto-discovers up to 25 same-origin pages (v1.8.0)
+- **CXL-grounded reasoning**: every recommendation traces back to a named principle from the GrowMe / CXL training framework (v1.8.0)
+- **Broken-link detection**: HEAD-checks every CTA and link on every audited page (v1.8.0)
+- **Form friction scoring**: per-form 0-100 score with CXL-grounded fixes (v1.8.0)
 - **Target Keywords**: Specify SEO keywords for alignment verification across all analysis
-- **Batch Multi-Page**: Analyze up to 5 pages per site with per-page scoring
 - **Enhanced Competitors**: Side-by-side checklist scoring with steal-worthy ideas
 - **Interactive Chat**: Ask questions, modify recommendations, drill into specific areas
 - **Learning Memory**: System gets smarter with every audit across all users
@@ -90,8 +107,9 @@ The long-term vision is a platform where:
 ## Where It's Going (Roadmap)
 
 ### Near-Term (Next 1-3 Months)
-- **Checklist Drill-Down**: Click any checklist category to see individual item pass/fail details
-- **Auto-Crawl Mode**: Automatically discover and analyze internal pages instead of manual URL entry
+- **Checklist Drill-Down**: Click any checklist category to see individual item pass/fail details, with CXL principle references on each item
+- **Component Extraction**: Split the now 2400+ line `App.jsx` into focused components (`<LinkHealthCard>`, `<CtaAuditCard>`, `<FormFrictionCard>`, page-discovery hook)
+- **JS-Rendered SPA Support**: Phase 2 deep-audit mode using `@sparticuz/chromium` + `puppeteer-core` so SPAs that hydrate forms/links at runtime are visible to the audit
 - **Heatmap Integration**: Overlay attention heatmaps on page screenshots to show where users actually look
 - **Historical Tracking**: Re-run audits and see score trends over time with before/after comparisons
 

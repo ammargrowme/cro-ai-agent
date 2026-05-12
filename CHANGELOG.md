@@ -2,6 +2,54 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.8.0] - 2026-05-12
+
+### Added
+- **Auto page discovery** — New `/api/discover` endpoint tries `sitemap.xml` → `sitemap_index.xml` → `Sitemap:` line in `robots.txt` → homepage link crawl with depth-1 BFS through priority paths (/about, /services, /contact, /pricing). Returns up to 25 same-origin URLs, prioritized homepage → contact → pricing → about → services → products → alphabetical
+- **Auto/Manual toggle in the UI** — "Batch Pages" section now has an Auto/Manual switch. Auto mode hits `/api/discover` and shows discovered URLs as toggleable chips with select-all / select-none controls. Manual mode keeps the existing textarea (no longer capped at 4)
+- **25-page audits** — Previous hard cap of 4 additional pages raised to 25. Server cap is `MAX_ADDITIONAL_PAGES = 25` in `api/analyze.js`; frontend matches
+- **Link health audit** — `api/_extract.js` runs HEAD-checks (with GET-with-Range fallback for 405/403) on every discovered `<a href>`, concurrency-limited to 10. Broken links surface in a new `link_health` report section with status code, link text, and origin page
+- **CTA audit** — Static detection of: empty/`#`/`javascript:` hrefs, phone-labeled CTAs that aren't `tel:` links, generic CTA copy (Submit/Click Here/Buy Now/Send). Renders as a `cta_audit` card in the report
+- **Form friction analysis** — New 6th AI call. Extracts every `<form>` (fields, labels, validation patterns, required flags, inline-label detection) and asks Gemini to apply CXL form-friction principles. Output: friction score 0-100, top friction points, concrete recommendations per form
+- **CXL knowledge base** — `api/_knowledge.js` distills the GrowMe CRO training docs into a `CXL_PRINCIPLES` constant (~3.5K chars) covering persuasive design, visual hierarchy, web forms, CTAs, awareness levels, friction taxonomy, Relevance/Trust/Stimulance heuristics, fast/slow thinking, and copywriting principles. Injected into the overview, recommendations, checklist, per-page, form-friction, and chat prompts
+- **Static-findings appendix in recommendations prompt** — Broken links, CTA issues, and form-friction flags are passed to the recs Gemini call as ground truth, so concrete URLs and fields appear in the report instead of generic advice
+- **Pages Audited list** — Compact footer card under the health cards listing every URL the audit covered
+
+### Changed
+- **Per-page AI scoring is now batched** — Splits pages into groups of 5 and runs the batches in parallel, so a 25-page audit doesn't overflow Gemini's response budget
+- **Scrape pipeline preserves raw HTML** — `scrapePromise` and `additionalPagePromises` now return `{ sanitized, raw }`. Sanitized HTML still feeds the AI; raw HTML feeds `extractLinks` / `extractButtons` / `extractForms` (which need preserved `class`/`href`/`style` attrs)
+- **Loading copy** — Added 5 new loading phrases for the discovery, link-health, form-friction, awareness-mapping, and CXL-friction phases. Step labels mention the new "Auditing Links, CTAs & Forms" phase
+
+### Known limitations
+- **SPA blindness** — JS-rendered forms and links are invisible to static analysis. The Form Health card explicitly notes this when no forms are detected. Resolving requires headless browser automation (deferred — see `docs/KNOWN-ISSUES.md`)
+- **HEAD-check noise** — Some servers return 405/403 for HEAD; we retry with `GET` + `Range: bytes=0-1` before flagging broken. Some firewalls still produce false positives
+- **Cost** — Per-audit Gemini token usage rises ~1.5–2× due to CXL injection across 6 calls and the form-friction pass
+
+## [Security] - 2026-05-12
+
+### Fixed
+- **CRITICAL: Gemini key was being bundled into client JS** — `.env.development.local` declared `VITE_GEMINI_API_KEY=...`. Vite bundles every `VITE_*` env var into the client-side JS chunk, which meant the key was publicly extractable from `https://cro-ai-agent.vercel.app/` via DevTools → Network → main JS. Server-side calls in `/api/*.js` were the only real consumer, so the `VITE_` prefix was incorrect from day one. Renamed env var to `GEMINI_API_KEY` (no prefix), removed `|| process.env.VITE_GEMINI_API_KEY` fallback from `api/analyze.js`, `api/chat.js`, `api/generateCode.js`, `api/generateABTests.js`. Updated docs (CLAUDE.md, README.md, TODO.md, DEVELOPER.md, docs/ARCHITECTURE.md).
+
+### Changed
+- **Migrated to new hub-managed API key** — Gemini key is now sourced from `growme-217600` (the consolidation hub), label "CRO AI Agent Gemini (server-side)". Old key from `gen-lang-client-0331746047` (GROWAGENTKEY) remains live until Vercel env swap + rotation per `Code/Ops/GCP Audit/reports/migration-execution-2026-05-12.md`.
+
+### USER ACTION REQUIRED (after this deploy)
+1. Vercel dashboard → cro-ai-agent → Settings → Environment Variables → DELETE `VITE_GEMINI_API_KEY` from all 3 environments (Production / Preview / Development).
+2. ADD `GEMINI_API_KEY` = new hub key value to all 3 environments.
+3. Trigger redeploy.
+4. Verify on `https://cro-ai-agent.vercel.app/`: open DevTools → Network → main JS bundle → grep for `AIzaSy` → no key visible.
+5. Trigger an analyze + chat + code-gen + A/B test to confirm all 4 server endpoints work.
+6. After deploy verified: Console-disable (do NOT delete) the old GROWAGENTKEY in project `gen-lang-client-0331746047` so leaked copies stop working.
+
+## [Docs] - 2026-04-10
+
+### Changed
+- **CLAUDE.md trimmed from 407 to 210 lines** — Extracted reference data into 4 standalone docs/ files for token efficiency
+- **Created docs/ARCHITECTURE.md** — Frontend, backend, learning system, CRO checklist, technical decisions
+- **Created docs/SCHEMAS.md** — Report schema + Chat response schema with JSON examples
+- **Created docs/FILE-MAP.md** — Complete directory structure with file descriptions
+- **Created docs/KNOWN-ISSUES.md** — Active issues, resolved issues, lessons learned
+
 ## [1.7.0] - 2026-03-24
 
 ### Fixed

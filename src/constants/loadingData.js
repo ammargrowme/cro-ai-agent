@@ -13,22 +13,27 @@ export const DEFAULT_FUN_FACTS = [
 export const STEP_HEADERS = [
   "Extracting Source Architecture",
   "Processing Visual Hierarchy",
-  "Evaluating Core Web Vitals",
+  "Auditing Links, CTAs & Forms",
   "Synthesizing Revenue Strategy",
   "Finalizing Growth Report"
 ];
 
 export const LOADING_PHRASES = [
+  "Discovering pages from sitemap & internal links...",
   "Parsing HTML structure & headings...",
   "Checking CTA placement above the fold...",
+  "HEAD-checking every link for broken URLs...",
+  "Verifying CTAs point to the right outcome...",
+  "Extracting form fields & validation patterns...",
   "Evaluating mobile tap targets (44px min)...",
   "Scanning for trust signals & reviews...",
   "Analyzing content readability & flow...",
-  "Checking form labels & validation...",
+  "Applying CXL friction taxonomy to forms...",
   "Measuring hero section height ratio...",
   "Detecting FAQ & social proof sections...",
-  "Scoring against 50+ checklist criteria...",
+  "Scoring against the Basic Website Standards...",
   "Comparing against past audit patterns...",
+  "Mapping awareness levels to page intent...",
   "Extracting SEO meta & keyword data...",
   "Evaluating visual hierarchy & whitespace..."
 ];

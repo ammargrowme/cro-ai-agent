@@ -1,7 +1,16 @@
 
 import { validateUrl, rateLimit } from './_utils.js';
+import { CXL_PRINCIPLES } from './_knowledge.js';
+import { extractLinks, extractButtons, extractForms, checkUrls, detectCtaIssues } from './_extract.js';
 
-const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
+// Server-side only — never reference VITE_ vars here, those would leak into client bundle.
+const apiKey = process.env.GEMINI_API_KEY || "";
+
+// Hard cap on additional pages per audit. Frontend can request fewer
+// (or more — we silently truncate). Tuned so 1 + 25 = 26 parallel scrapes
+// plus 6 Gemini calls plus ~100 HEAD checks finish well under the 300s
+// Vercel function limit.
+const MAX_ADDITIONAL_PAGES = 25;
 
 // ─── CRO CHECKLIST (from GrowMe Basic Website Standards) ──────────
 const CRO_CHECKLIST = `
@@ -326,6 +335,36 @@ const PER_PAGE_SCHEMA = {
   required: ["page_scores"]
 };
 
+const FORM_FRICTION_SCHEMA = {
+  type: "object",
+  properties: {
+    forms: {
+      type: "array",
+      description: "One entry per form analyzed.",
+      items: {
+        type: "object",
+        properties: {
+          page_url: { type: "string" },
+          form_purpose: { type: "string", description: "Inferred purpose (e.g., Contact, Newsletter, Quote Request, Lead Capture, Booking). MAX 5 words." },
+          friction_score: { type: "number", description: "0-100. Lower = more friction. Apply CXL form-friction principles." },
+          top_friction_points: {
+            type: "array",
+            description: "3-5 specific friction issues found in the form. Each MAX 20 words.",
+            items: { type: "string" }
+          },
+          recommendations: {
+            type: "array",
+            description: "3-5 concrete fixes. Each MAX 20 words.",
+            items: { type: "string" }
+          }
+        },
+        required: ["page_url", "form_purpose", "friction_score", "top_friction_points", "recommendations"]
+      }
+    }
+  },
+  required: ["forms"]
+};
+
 // ─── MAIN HANDLER ──────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -382,6 +421,9 @@ export default async function handler(req, res) {
     // ══════════════════════════════════════════════════
     // PHASE 1: Scrape + PageSpeed IN PARALLEL
     // ══════════════════════════════════════════════════
+    // Each scrape returns { sanitized, raw } — sanitized for AI prompts,
+    // raw HTML preserved for static link/button/form extraction (which
+    // needs the original class/style/href attributes the sanitizer strips).
     const scrapePromise = (async () => {
       try {
         const t = Date.now();
@@ -389,12 +431,13 @@ export default async function handler(req, res) {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
           signal: AbortSignal.timeout(15000)
         });
-        const html = sanitizeHtml(await pageRes.text());
-        console.log(`[${logId}] [PHASE 1] Scrape OK: ${html.length} chars in ${Date.now() - t}ms`);
-        return html;
+        const rawHtml = await pageRes.text();
+        const sanitized = sanitizeHtml(rawHtml);
+        console.log(`[${logId}] [PHASE 1] Scrape OK: ${sanitized.length} chars in ${Date.now() - t}ms`);
+        return { sanitized, raw: rawHtml };
       } catch (err) {
         console.error(`[${logId}] [PHASE 1] Scrape FAIL: ${err.message}`);
-        return "";
+        return { sanitized: "", raw: "" };
       }
     })();
 
@@ -428,25 +471,28 @@ export default async function handler(req, res) {
       return data;
     })();
 
-    // Scrape additional site pages in parallel (max 4)
-    const additionalPagePromises = (additionalPages || []).slice(0, 4).map(async (pageUrl) => {
+    // Scrape additional site pages in parallel (cap MAX_ADDITIONAL_PAGES).
+    const cappedAdditionalPages = (additionalPages || []).slice(0, MAX_ADDITIONAL_PAGES);
+    const additionalPagePromises = cappedAdditionalPages.map(async (pageUrl) => {
       try {
         const t = Date.now();
         const pageRes = await fetch(pageUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
           signal: AbortSignal.timeout(15000)
         });
-        const html = sanitizeHtml(await pageRes.text());
-        console.log(`[${logId}] [PHASE 1] Page scrape OK (${pageUrl}): ${html.length} chars in ${Date.now() - t}ms`);
-        return { url: pageUrl, html };
+        const rawHtml = await pageRes.text();
+        const sanitized = sanitizeHtml(rawHtml);
+        console.log(`[${logId}] [PHASE 1] Page scrape OK (${pageUrl}): ${sanitized.length} chars in ${Date.now() - t}ms`);
+        return { url: pageUrl, html: sanitized, raw: rawHtml };
       } catch (err) {
         console.warn(`[${logId}] [PHASE 1] Page scrape FAIL (${pageUrl}): ${err.message}`);
-        return { url: pageUrl, html: "" };
+        return { url: pageUrl, html: "", raw: "" };
       }
     });
 
     // Scrape competitors in parallel with main site
-    const competitorPromises = (competitors || []).slice(0, 2).map(async (compUrl) => {
+    const cappedCompetitors = (competitors || []).slice(0, 2);
+    const competitorPromises = cappedCompetitors.map(async (compUrl) => {
       try {
         const t = Date.now();
         const compRes = await fetch(compUrl, {
@@ -463,13 +509,85 @@ export default async function handler(req, res) {
     });
 
     const allPhase1 = await Promise.all([scrapePromise, pageSpeedPromise, ...additionalPagePromises, ...competitorPromises]);
-    const mainHtml = allPhase1[0];
+    const mainScrape = allPhase1[0];
+    const mainHtml = mainScrape.sanitized;
+    const mainRaw = mainScrape.raw;
     const pageSpeedData = allPhase1[1];
-    const additionalPageData = allPhase1.slice(2, 2 + (additionalPages || []).slice(0, 4).length);
-    const competitorData = allPhase1.slice(2 + (additionalPages || []).slice(0, 4).length);
+    const additionalPageData = allPhase1.slice(2, 2 + cappedAdditionalPages.length);
+    const competitorData = allPhase1.slice(2 + cappedAdditionalPages.length);
     const validPages = additionalPageData.filter(p => p.html.length > 0);
     const validCompetitors = competitorData.filter(c => c.html.length > 0);
     console.log(`[${logId}] [PHASE 1 DONE] ${Date.now() - globalStart}ms elapsed | Pages: ${validPages.length}/${additionalPageData.length} | Competitors: ${validCompetitors.length}/${competitorData.length}`);
+
+    // ══════════════════════════════════════════════════
+    // PHASE 1.5: Static analysis — links, buttons, forms, URL health
+    // ══════════════════════════════════════════════════
+    // Operates on the RAW (unsanitized) HTML so we keep class/href/style
+    // for accurate CTA detection. AI calls keep using `sanitized` HTML.
+    const allScrapedPages = [
+      { url, html: mainHtml, raw: mainRaw },
+      ...validPages.map(p => ({ url: p.url, html: p.html, raw: p.raw || p.html }))
+    ];
+
+    const extractedPerPage = allScrapedPages.map(p => {
+      const links = extractLinks(p.raw, p.url);
+      const buttons = extractButtons(p.raw);
+      const forms = extractForms(p.raw, p.url);
+      return {
+        url: p.url,
+        links,
+        buttons,
+        forms,
+        cta_issues: detectCtaIssues(p.url, links, buttons)
+      };
+    });
+
+    // Build the unique URL set for HEAD checks — internal + external links
+    // that point at real http(s) URLs. Skip tel:/mailto:/empty.
+    const allUrlsToCheck = [...new Set(
+      extractedPerPage
+        .flatMap(p => p.links)
+        .filter(l => l.href && /^https?:/i.test(l.href) && !l.isEmpty)
+        .map(l => l.href)
+    )];
+
+    let urlHealth = [];
+    if (allUrlsToCheck.length > 0) {
+      const t = Date.now();
+      urlHealth = await checkUrls(allUrlsToCheck, { concurrency: 10, timeoutMs: 5000 });
+      console.log(`[${logId}] [PHASE 1.5] URL health checked ${urlHealth.length} URLs in ${Date.now() - t}ms`);
+    }
+    const urlHealthMap = new Map(urlHealth.map(h => [h.url, h]));
+
+    // Surface broken links + assemble per-page summary.
+    const brokenLinks = urlHealth
+      .filter(h => !h.ok)
+      .map(h => {
+        // Where did this URL appear?
+        const onPages = extractedPerPage
+          .filter(p => p.links.some(l => l.href === h.url))
+          .map(p => p.url);
+        const sampleText = (() => {
+          for (const p of extractedPerPage) {
+            const hit = p.links.find(l => l.href === h.url);
+            if (hit) return hit.text;
+          }
+          return "";
+        })();
+        return {
+          url: h.url,
+          status: h.status,
+          on_pages: onPages,
+          link_text: sampleText,
+          error: h.error
+        };
+      });
+
+    const allCtaIssues = extractedPerPage.flatMap(p => p.cta_issues);
+    const totalForms = extractedPerPage.flatMap(p =>
+      p.forms.map(f => ({ ...f, pageUrl: p.url }))
+    );
+    console.log(`[${logId}] [PHASE 1.5 DONE] Links: ${allUrlsToCheck.length} (${brokenLinks.length} broken) | CTA issues: ${allCtaIssues.length} | Forms: ${totalForms.length}`);
 
     // ══════════════════════════════════════════════════
     // PHASE 2: Three AI calls IN PARALLEL
@@ -542,6 +660,9 @@ ${validPages.map(p => {
 You MUST evaluate the site against this professional CRO checklist:
 ${CRO_CHECKLIST}
 
+Ground your reasoning in this research-backed CRO framework:
+${CXL_PRINCIPLES}
+
 CRITICAL RULES:
 - summary: MAX 60 words. Be specific about what works and what doesn't. Reference specific checklist failures.
 - Each strength: MAX 20 words. Must reference what the site does RIGHT from the checklist.
@@ -560,11 +681,45 @@ ${mainHtml}${multiPageContext}`;
       return result;
     })();
 
+    // Build a static-findings appendix so recommendations can call out
+    // concrete broken links / CTA issues / form friction without re-deriving them.
+    const staticFindings = (() => {
+      const lines = [];
+      if (brokenLinks.length > 0) {
+        lines.push(`BROKEN / UNREACHABLE LINKS (${brokenLinks.length}):`);
+        brokenLinks.slice(0, 15).forEach(b => {
+          lines.push(`- "${b.link_text || '(no text)'}" → ${b.url} (status ${b.status}) on ${b.on_pages[0] || 'unknown'}`);
+        });
+      }
+      if (allCtaIssues.length > 0) {
+        lines.push(`\nCTA / BUTTON ISSUES (${allCtaIssues.length}):`);
+        allCtaIssues.slice(0, 15).forEach(i => {
+          lines.push(`- [${i.severity}] ${i.issue} — ${i.evidence} (on ${i.page})`);
+        });
+      }
+      if (totalForms.length > 0) {
+        const formsWithInlineLabels = totalForms.filter(f => f.hasInlineLabels);
+        const longForms = totalForms.filter(f => f.fieldCount > 6);
+        if (formsWithInlineLabels.length > 0) {
+          lines.push(`\nFORMS USING INLINE LABELS (CXL: bad practice) — ${formsWithInlineLabels.length} forms.`);
+        }
+        if (longForms.length > 0) {
+          lines.push(`FORMS WITH >6 FIELDS (consider splitting / minimizing): ${longForms.length} forms.`);
+        }
+      }
+      return lines.length > 0
+        ? `\n\n[STATIC AUDIT FINDINGS — incorporate these as concrete recommendations]:\n${lines.join('\n')}`
+        : "";
+    })();
+
     const recsPromise = (async () => {
       const prompt = `You are an Elite CRO Director. Based on your analysis of this website, provide actionable CRO recommendations.
 
 You MUST base your recommendations on this professional CRO checklist:
 ${CRO_CHECKLIST}
+
+Ground your recommendations in this research-backed CRO framework:
+${CXL_PRINCIPLES}
 
 CRITICAL RULES:
 - Include ONLY recommendations that address REAL, specific issues found on THIS site. Do NOT pad with generic advice.
@@ -574,12 +729,13 @@ CRITICAL RULES:
 - priority must be "High", "Medium", or "Low".
 - category must be one of: "CTA", "Trust", "UX", "Design", "Performance", "Copy", "Mobile", "SEO", or "Forms".
 - Focus on the HIGHEST-IMPACT checklist failures first. Order by priority (High first).
+- If STATIC AUDIT FINDINGS are listed below, treat them as ground truth and surface the most important ones as recommendations.
 ${learningContext}
 
 ${siteContext}
 
 [HTML STRUCTURE]:
-${mainHtml.substring(0, 15000)}${multiPageContext}`;
+${mainHtml.substring(0, 15000)}${multiPageContext}${staticFindings}`;
 
       const t = Date.now();
       const result = await callGemini(logId, prompt, imageParts, RECOMMENDATIONS_SCHEMA);
@@ -591,6 +747,9 @@ ${mainHtml.substring(0, 15000)}${multiPageContext}`;
       const prompt = `You are a CRO Auditor. Score this website against each category in the CRO checklist below.
 
 ${CRO_CHECKLIST}
+
+Ground your scoring in this research-backed framework:
+${CXL_PRINCIPLES}
 
 For each category, score 0-100 based on how many items in that category the site passes.
 - 0 = fails every item
@@ -604,7 +763,7 @@ Also provide the top 5 most critical checklist failures as "checklist_flags".
 ${siteContext}
 
 [HTML STRUCTURE]:
-${mainHtml.substring(0, 12000)}${multiPageContext}`;
+${mainHtml.substring(0, 12000)}${multiPageContext}${staticFindings}`;
 
       const t = Date.now();
       const result = await callGemini(logId, prompt, imageParts, CHECKLIST_SCHEMA, 8192);
@@ -644,45 +803,109 @@ Be honest — if the competitor is better at something, say so clearly.`;
       return result;
     })() : Promise.resolve({ overview: "", comparisons: [] });
 
-    // 5th AI call: Per-page scoring (only if additional pages were scraped)
-    const perPagePromise = validPages.length > 0 ? (async () => {
-      const pagesContext = [
-        { url, html: mainHtml.substring(0, 5000) },
-        ...validPages.map(p => ({ url: p.url, html: p.html.substring(0, 5000) }))
-      ];
-
-      const prompt = `You are a CRO Auditor. Score each page individually on overall CRO quality (0-100). Identify the top 3 issues per page.
+    // 5th AI call: Per-page scoring — BATCHED so a 25-page audit doesn't
+    // overflow Gemini's response budget. We split the page list into
+    // chunks of PAGE_BATCH and run the chunks in parallel.
+    const PAGE_BATCH = 5;
+    const allPagesForScoring = [
+      { url, html: mainHtml.substring(0, 5000) },
+      ...validPages.map(p => ({ url: p.url, html: p.html.substring(0, 5000) }))
+    ];
+    const pageBatches = [];
+    for (let i = 0; i < allPagesForScoring.length; i += PAGE_BATCH) {
+      pageBatches.push(allPagesForScoring.slice(i, i + PAGE_BATCH));
+    }
+    // Only run per-page AI when we have >1 page total (otherwise overview
+    // already covers the main URL).
+    const perPagePromise = allPagesForScoring.length > 1 ? (async () => {
+      const t = Date.now();
+      const batchPromises = pageBatches.map((batch, idx) => {
+        const prompt = `You are a CRO Auditor. Score each page individually on overall CRO quality (0-100). Identify the top 3 issues per page.
 
 ${CRO_CHECKLIST}
 
+${CXL_PRINCIPLES}
+
 PAGES TO SCORE:
-${pagesContext.map(p => `[PAGE: ${p.url}]\n${p.html}`).join('\n\n---\n\n')}
+${batch.map(p => `[PAGE: ${p.url}]\n${p.html}`).join('\n\n---\n\n')}
 
 For each page, determine:
 - page_type: What kind of page is it (Homepage, Pricing, About, Contact, Service, Blog, etc.)
 - overall_score: 0-100 CRO score for THIS specific page
 - top_issues: The 3 most critical CRO issues on THIS page (each max 15 words)`;
-
-      const t = Date.now();
-      const result = await callGemini(logId, prompt, [], PER_PAGE_SCHEMA, 4096);
-      console.log(`[${logId}] [PHASE 2] Per-page scoring done in ${Date.now() - t}ms. Pages: ${result.page_scores?.length}`);
-      return result;
+        return callGemini(`${logId}:p${idx}`, prompt, [], PER_PAGE_SCHEMA, 4096)
+          .catch(err => {
+            console.warn(`[${logId}] [PHASE 2] Per-page batch ${idx} FAILED: ${err.message}`);
+            return { page_scores: [] };
+          });
+      });
+      const batchResults = await Promise.all(batchPromises);
+      const merged = batchResults.flatMap(r => r.page_scores || []);
+      console.log(`[${logId}] [PHASE 2] Per-page scoring done in ${Date.now() - t}ms (${pageBatches.length} batches). Pages: ${merged.length}`);
+      return { page_scores: merged };
     })() : Promise.resolve({ page_scores: [] });
 
+    // 6th AI call: Form friction analysis — only if any forms were detected.
+    const formFrictionPromise = totalForms.length > 0 ? (async () => {
+      const t = Date.now();
+      // Serialize forms with field-level detail so the AI can apply CXL rules.
+      const formContext = totalForms.slice(0, 15).map((f, i) => {
+        const fieldList = f.fields.map(fld => {
+          const flags = [];
+          if (fld.required) flags.push('required');
+          if (fld.hasInlineLabel) flags.push('inline-label');
+          if (fld.hasValidationPattern) flags.push('has-pattern');
+          if (!fld.label && !fld.hasAriaLabel) flags.push('no-label');
+          return `  ${fld.kind}[type=${fld.type}, name=${fld.name || '(none)'}, label="${fld.label || '(none)'}"${flags.length ? ', flags=' + flags.join('+') : ''}]`;
+        }).join('\n');
+        return `[FORM #${i + 1} — page: ${f.pageUrl}]
+action: ${f.action || '(none)'}
+method: ${f.method}
+fields: ${f.fieldCount} total, ${f.requiredCount} required
+${fieldList}`;
+      }).join('\n\n');
+
+      const prompt = `You are a CRO Auditor specializing in web form friction. Apply CXL form-friction principles to score and improve each form.
+
+${CXL_PRINCIPLES}
+
+FORMS DETECTED ON THIS SITE:
+${formContext}
+
+For EACH form, return:
+- page_url: the URL of the page hosting the form
+- form_purpose: inferred purpose (Contact, Quote, Newsletter, Lead Capture, Booking, etc.) — max 5 words
+- friction_score: 0-100. LOWER = MORE FRICTION. Apply CXL rules: inline labels = bad, no inline validation = friction, too many fields = friction, no expectation-setting copy = friction.
+- top_friction_points: 3-5 SPECIFIC friction issues found in THIS form (e.g., "Inline label on email field — user loses context after typing", "8 required fields with no progress indicator"). Each max 20 words.
+- recommendations: 3-5 concrete fixes (e.g., "Replace inline label with above-field label on Phone", "Split into 2-step form: contact info → details"). Each max 20 words.
+
+Be concrete — reference the actual fields by name. Avoid generic advice.`;
+      try {
+        const result = await callGemini(logId, prompt, [], FORM_FRICTION_SCHEMA, 4096);
+        console.log(`[${logId}] [PHASE 2] Form friction done in ${Date.now() - t}ms. Forms: ${result.forms?.length}`);
+        return result;
+      } catch (err) {
+        console.warn(`[${logId}] [PHASE 2] Form friction FAILED: ${err.message}`);
+        return { forms: [] };
+      }
+    })() : Promise.resolve({ forms: [] });
+
     // Use Promise.allSettled so one failing call doesn't crash the entire audit
-    const [overviewResult, recsResult, checklistResult, competitorResult, perPageResult] = await Promise.allSettled([overviewPromise, recsPromise, checklistPromise, competitorPromise, perPagePromise]);
+    const [overviewResult, recsResult, checklistResult, competitorResult, perPageResult, formFrictionResult] = await Promise.allSettled([overviewPromise, recsPromise, checklistPromise, competitorPromise, perPagePromise, formFrictionPromise]);
 
     const overview = overviewResult.status === 'fulfilled' ? overviewResult.value : { overall_score: 0, summary: "Overview generation failed — please retry.", strengths: [], quick_wins: [] };
     const recs = recsResult.status === 'fulfilled' ? recsResult.value : { recommendations: [] };
     const checklist = checklistResult.status === 'fulfilled' ? checklistResult.value : { checklist_scores: {}, checklist_flags: ["Checklist scoring failed — please retry the audit."] };
     const competitorAnalysis = competitorResult.status === 'fulfilled' ? competitorResult.value : { overview: "", comparisons: [] };
     const perPageScores = perPageResult.status === 'fulfilled' ? perPageResult.value : { page_scores: [] };
+    const formFriction = formFrictionResult.status === 'fulfilled' ? formFrictionResult.value : { forms: [] };
 
     if (overviewResult.status === 'rejected') console.error(`[${logId}] Overview FAILED: ${overviewResult.reason?.message}`);
     if (recsResult.status === 'rejected') console.error(`[${logId}] Recommendations FAILED: ${recsResult.reason?.message}`);
     if (checklistResult.status === 'rejected') console.error(`[${logId}] Checklist FAILED: ${checklistResult.reason?.message}`);
     if (competitorResult.status === 'rejected') console.error(`[${logId}] Competitor FAILED: ${competitorResult.reason?.message}`);
     if (perPageResult.status === 'rejected') console.error(`[${logId}] Per-page FAILED: ${perPageResult.reason?.message}`);
+    if (formFrictionResult.status === 'rejected') console.error(`[${logId}] Form friction FAILED: ${formFrictionResult.reason?.message}`);
 
     // ══════════════════════════════════════════════════
     // PHASE 3: Merge & Deliver
@@ -691,6 +914,45 @@ For each page, determine:
     // Ensure all 10 checklist categories have a value (fill missing with 0)
     const defaultScores = { seo_alignment: 0, above_the_fold: 0, cta_focus: 0, content_structure: 0, visual_hierarchy: 0, mobile_optimization: 0, trust_proof: 0, forms_interaction: 0, performance_qa: 0, content_standards: 0 };
     const mergedChecklistScores = { ...defaultScores, ...(checklist.checklist_scores || {}) };
+
+    // Build the static-analysis report sections so the frontend can render
+    // Link Health / CTA Audit / Form Health cards without round-tripping.
+    const totalLinks = extractedPerPage.reduce((sum, p) => sum + p.links.length, 0);
+    const linkHealthByPage = extractedPerPage.map(p => {
+      const broken = p.links.filter(l => {
+        if (!l.href || !/^https?:/i.test(l.href)) return false;
+        const h = urlHealthMap.get(l.href);
+        return h && !h.ok;
+      });
+      return {
+        url: p.url,
+        total_links: p.links.length,
+        external_links: p.links.filter(l => l.isExternal).length,
+        broken_count: broken.length
+      };
+    });
+
+    const totalCtas = extractedPerPage.reduce(
+      (sum, p) => sum + p.buttons.filter(b => b.isCta).length + p.links.filter(l => l.isCta).length,
+      0
+    );
+
+    const perFormPayload = totalForms.map((f, idx) => {
+      const aiMatch = (formFriction.forms || []).find(af => af.page_url === f.pageUrl) ||
+        // Fall back to ordered match if URLs don't line up
+        (formFriction.forms || [])[idx];
+      return {
+        page_url: f.pageUrl,
+        action: f.action,
+        method: f.method,
+        field_count: f.fieldCount,
+        required_count: f.requiredCount,
+        has_inline_labels: f.hasInlineLabels,
+        has_any_validation: f.hasAnyValidation,
+        fields: f.fields,
+        ai_analysis: aiMatch || null
+      };
+    });
 
     const report = {
       overall_score: overview.overall_score,
@@ -702,17 +964,35 @@ For each page, determine:
       checklist_scores: mergedChecklistScores,
       checklist_flags: checklist.checklist_flags || [],
       page_scores: perPageScores.page_scores || [],
+      link_health: {
+        total_links: totalLinks,
+        total_checked: urlHealth.length,
+        broken_links: brokenLinks,
+        by_page: linkHealthByPage
+      },
+      cta_audit: {
+        total_ctas: totalCtas,
+        issues: allCtaIssues
+      },
+      form_health: {
+        total_forms: totalForms.length,
+        per_form: perFormPayload
+      },
+      pages_audited: allScrapedPages.map(p => p.url),
       audit_metadata: {
         url: url,
         timestamp: new Date().toISOString(),
         had_screenshot: imageParts.length > 0,
         had_learnings: (pastLearnings?.length || 0) > 0,
-        duration_ms: Date.now() - globalStart
+        duration_ms: Date.now() - globalStart,
+        pages_requested: cappedAdditionalPages.length + 1,
+        pages_scraped: allScrapedPages.length,
+        urls_health_checked: urlHealth.length
       }
     };
 
     const totalTime = Date.now() - globalStart;
-    console.log(`[${logId}] [DONE] Score: ${report.overall_score} | Strengths: ${report.strengths.length} | Wins: ${report.quick_wins.length} | Recs: ${report.recommendations.length} | Checklist: ${Object.keys(report.checklist_scores).length} categories | Total: ${totalTime}ms`);
+    console.log(`[${logId}] [DONE] Score: ${report.overall_score} | Pages: ${report.pages_audited.length} | Recs: ${report.recommendations.length} | Broken: ${brokenLinks.length} | Forms: ${totalForms.length} | Total: ${totalTime}ms`);
     console.log(`[${logId}] ════════════════════════════════════════`);
 
     return res.status(200).json(report);

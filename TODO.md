@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-03-24 (v1.7.0)
+**Last updated**: 2026-05-12 (v1.8.0)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 
@@ -10,13 +10,25 @@
 
 ## YOUR FIRST TASK (Start Here)
 
-**Build the next feature.** v1.7.0 is stable and deployed. Pick from Phase 2 features below:
+**v1.8.0 is shipped.** Auto-discovery, link/CTA/form audit, and CXL knowledge are live. Pick the next priority:
 
-1. **Checklist Drill-Down** — Make checklist category circles clickable to show individual item pass/fail
-2. **Auto-Crawl Mode** — Extract internal links from main URL and auto-discover pages to analyze
-3. **Component Extraction** — Continue modularization: extract React hooks and UI components from App.jsx
+1. **Checklist Drill-Down** — Make the 10 checklist circles clickable to expand into per-item pass/fail (each category has 4-8 underlying checklist items already in `api/analyze.js`). Carry CXL principle references into the drill-down view
+2. **Component Extraction** — Continue modularization. `App.jsx` is now 2400+ lines. Pull out: `<LinkHealthCard>`, `<CtaAuditCard>`, `<FormFrictionCard>`, `<PagesAuditedList>` (already self-contained sub-trees), plus the page-discovery toggle into a `<PageSourcePicker>` hook
+3. **JS-rendered SPA support (deferred from v1.8.0)** — Static extraction can't see forms/links rendered by JS frameworks (Next.js after hydration, React SPAs). Investigate `@sparticuz/chromium` + `puppeteer-core` on Vercel for a Phase 2 "deep audit" mode. ~50MB unzipped budget is tight; may need a separate `/api/deep-audit` function
 
 ---
+
+## COMPLETED (v1.8.0 — May 12, 2026)
+
+- [x] **Auto page discovery** — New `/api/discover` endpoint: sitemap.xml + robots.txt + homepage crawl with depth-1 BFS, prioritizes homepage/contact/pricing/about/services
+- [x] **25-page audits** — Removed 4-page hard cap. `MAX_ADDITIONAL_PAGES = 25` server-side, frontend matches
+- [x] **Auto/Manual toggle** — UI lets operators choose auto-discovery or the legacy manual textarea; discovered URLs render as toggleable chips with select-all/none controls
+- [x] **Link health audit** — `checkUrls()` HEAD-checks every link (concurrency 10, GET-with-Range fallback for 405/403). Broken links surface in `report.link_health.broken_links`
+- [x] **CTA audit** — Static rules flag empty hrefs, "Call Us" CTAs without `tel:`, generic CTA copy. Rendered as `report.cta_audit.issues`
+- [x] **Form friction analysis** — Extracts every `<form>` (fields, labels, validation, required, inline-label flag) and runs a 6th Gemini call applying CXL form-friction rules. Output: per-form friction score + recommendations
+- [x] **CXL knowledge injection** — `api/_knowledge.js` ships `CXL_PRINCIPLES` (~3.5K chars distilled from the GrowMe training docs). Injected into overview, recs, checklist, per-page, form-friction, and chat prompts
+- [x] **Per-page AI batching** — Pages split into groups of 5 and scored in parallel so 25-page audits don't overflow Gemini's response budget
+- [x] **Pages Audited list** — Compact card under the health row showing every URL covered
 
 ## COMPLETED (v1.7.0 — March 24, 2026)
 
@@ -188,10 +200,10 @@ These features are implemented but need real-world testing with a Gemini API key
 1. Read `CLAUDE.md` for full project context (architecture, schemas, rules, session history)
 2. Read this file (`TODO.md`) for what's done and what's next
 3. Run `npm install && npm run dev` to start locally
-4. Set `VITE_GEMINI_API_KEY` in `.env` for local testing (copy from `.env.example`)
+4. Set `GEMINI_API_KEY` in `.env` for local testing (copy from `.env.example`) — do NOT use the `VITE_` prefix, that bundles into client JS
 5. The app auto-deploys to https://cro-ai-agent.vercel.app/ on every push to `main`
 6. Start with "YOUR FIRST TASK" at the top of this file
 7. After testing, pick the next item from "NEXT FEATURES TO BUILD"
 
 ---
-*Last updated by Claude Opus 4.6 — March 24, 2026 (v1.7.0)*
+*Last updated by Claude Opus 4.7 — May 12, 2026 (v1.8.0)*

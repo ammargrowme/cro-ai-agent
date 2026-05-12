@@ -18,18 +18,23 @@ GROWAGENT is a high-performance, AI-driven Conversion Rate Optimization (CRO) au
 
 ## Key Features
 
+- **Auto Page Discovery (v1.8.0)**: Give it just a domain — GROWAGENT discovers up to 25 pages via sitemap.xml, robots.txt, and homepage crawl. Preview the discovered URLs and deselect any you don't want audited before firing.
+- **Full-Site Audit (v1.8.0)**: Up to 25 pages per audit (was 4). Per-page CRO scoring runs in batches of 5 in parallel so the audit stays under 300s.
+- **Link Health Audit (v1.8.0)**: Every `<a href>` HEAD-checked (concurrency 10, GET-with-Range fallback for 405/403). Broken URLs surface with their link text, status code, and the pages they appeared on.
+- **CTA Audit (v1.8.0)**: Static rules flag empty/`#`/`javascript:` hrefs, "Call Us" CTAs missing `tel:` links, and generic CTA copy (Submit/Click Here/Buy Now/Send) — all things the CXL framework calls out as outcome-mismatch friction.
+- **Form Friction Analysis (v1.8.0)**: Every `<form>` extracted (fields, labels, validation, required, inline-label detection) and scored by a dedicated Gemini call applying CXL form-friction rules. Returns a friction score 0-100 + concrete fixes per form.
+- **CXL Knowledge Base (v1.8.0)**: Persuasive design, awareness levels, friction taxonomy, Relevance/Trust/Stimulance heuristics, fast/slow thinking — distilled from the GrowMe CRO training docs and injected into every Gemini prompt so recommendations cite named principles.
 - **Live Site Scraper**: Automatically extracts HTML, CSS structure, and DOM hierarchy from any public URL.
 - **Multimodal Analysis**: Combines text-based code analysis with visual screenshot interpretation using Gemini 2.5 Flash.
-- **CRO Checklist Audit**: Scores websites against a 50+ criteria professional checklist across 10 categories.
+- **CRO Checklist Audit**: Scores websites against the GrowMe Basic Website Standards — 50+ criteria across 10 categories. This is the canonical checklist used for every audit.
 - **Adaptive Learning System**: Gets smarter with every audit — detects recurring patterns across audits, extracts insights from chat feedback, and applies accumulated knowledge to future analysis.
 - **Secure Backend Proxy**: All API calls are routed through Vercel Serverless Functions to protect sensitive API keys.
 - **Enhanced Competitor Analysis**: Side-by-side comparison matrix with per-category scores and steal-worthy ideas from competitors.
-- **Multi-Page Analysis**: Analyze up to 5 pages per site with individual scores, page type detection, and per-page top issues.
 - **Target Keywords**: Specify SEO keywords for alignment verification across all AI analysis.
-- **Priority-Based Strategy**: Generates prioritized recommendations mapped to checklist items.
+- **Priority-Based Strategy**: Generates prioritized recommendations mapped to checklist items AND CXL principles.
 - **Developer Handoff**: Each recommendation includes an AI-generated **Code Patch** (HTML/Tailwind) and **A/B Test Variations**.
 - **Multi-Format Export**: 9 export formats — PDF, Word (.docx), Excel (.xlsx), Plain Text, Markdown, CSV, JSON, PNG, JPEG — organized in a Documents/Data/Images dropdown.
-- **Interactive Chat**: A real-time AI Strategist terminal that can update the live dashboard and extract reusable CRO insights.
+- **Interactive Chat**: A real-time AI Strategist terminal that can update the live dashboard and extract reusable CRO insights. Now CXL-grounded — push back on a recommendation and the AI explains which CXL principle the original rec was based on.
 - **API Security**: SSRF prevention, rate limiting, input validation, and control character stripping on all endpoints.
 
 ---
@@ -140,8 +145,9 @@ Key rules:
 2. **Setup Env**
    Create `.env`:
    ```env
-   VITE_GEMINI_API_KEY=YOUR_KEY_HERE
+   GEMINI_API_KEY=YOUR_KEY_HERE
    ```
+   ⚠️ Do NOT use the `VITE_` prefix — Vite bundles `VITE_*` env vars into the client JS, which would expose your Gemini key publicly. `GEMINI_API_KEY` (no prefix) stays server-side and is read by the `/api/*` Vercel functions.
 
 3. **Launch**
    ```bash
@@ -157,8 +163,15 @@ Key rules:
 - [x] Server-side learning persistence (Upstash Redis — v1.4.0)
 - [x] Multi-format export: PDF, Word, Excel, TXT, JPEG, PNG, MD, CSV, JSON (v1.7.0)
 - [x] Codebase modularization & API security hardening (v1.7.0)
-- [ ] Checklist drill-down (clickable category details)
-- [ ] Auto-crawl mode (discover pages automatically)
+- [x] **Auto-discover mode** — sitemap + robots + homepage crawl (v1.8.0)
+- [x] **25-page audits** — raised from 4 (v1.8.0)
+- [x] **Link health audit** — HEAD-check every URL (v1.8.0)
+- [x] **CTA audit** — flag broken / generic / mismatched CTAs (v1.8.0)
+- [x] **Form friction analysis** — extract every form, score against CXL rules (v1.8.0)
+- [x] **CXL knowledge base** — research-backed reasoning across all prompts (v1.8.0)
+- [ ] Checklist drill-down (clickable category details for per-item pass/fail)
+- [ ] Component extraction (split App.jsx into focused components)
+- [ ] JS-rendered SPA support (Puppeteer/Playwright deep-audit mode)
 - [ ] User authentication & Report history
 - [ ] Deep-link integration with Shopify/WooCommerce
 
