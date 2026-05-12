@@ -2,6 +2,22 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.8.1] - 2026-05-12
+
+### Fixed
+- **CTA Audit false-positive flood (3 root causes)** — initial v1.8.0 release flagged nav-menu dropdown triggers, Cloudflare email-protection URLs, and per-page repeats as "broken CTAs". Live audit on growmemarketing.ca went from 84 issues → 0 false positives.
+  - **Dropdown nav triggers** — `<a href="#">` with `aria-haspopup` / `aria-expanded` / `aria-controls` / `role="menuitem|button"` / `data-toggle` / `data-bs-toggle` / dropdown class names are now treated as JS-handled, not broken.
+  - **Structural nav-context detection** — any empty-href anchor inside `<nav>`, `<header>`, `<menu>`, or `role="navigation|menu|menubar"` is suppressed regardless of class name. Catches custom site-specific classes (e.g. growmemarketing.ca's `gm-nav-link`) that enumerated regexes never could.
+  - **Interactive widget containers** — same structural treatment for Elementor flip-box / accordion / tabs / carousel / slider / swiper / splide / modal-trigger / reveal-card / service-card / feature-box / info-box. Uses depth-tracking close-tag matching to compute widget ranges.
+  - **Broader dropdown class regex** — now also matches `nav-link` / `nav-item` / `menu-link` / `menu-item` / `nav-trigger` patterns as a fallback.
+  - **Cloudflare URL exclusion** — `shouldSkipHealthCheck()` filters `/cdn-cgi/l/email-protection`, `/cdn-cgi/scrape-shield`, `/cdn-cgi/challenge-platform`, `/cdn-cgi/bm/cv/result`, `/cdn-cgi/trace`, `/cdn-cgi/rum` from the HEAD-check pass. These shims always return 4xx server-side; only resolve client-side via Cloudflare's JS.
+  - **Cross-page CTA dedup** — identical `{severity, issue, evidence}` triples merged in `api/analyze.js` Phase 3 with `page_count` rollup. Frontend shows "× N pages" badge. Same nav dropdown that appeared on 25 pages no longer inflates the issue count 25×.
+- **Negative-case verified** — genuine broken CTAs in `<main>`, body, and `<footer>` still flag correctly (separate test fixture).
+
+### Security
+- **Verified live production bundle is key-free** — `grep -E "AIza[0-9A-Za-z_-]{20,}"` against `cro.growmeapps.io`'s three loaded JS chunks returns zero matches. The v1.8.0 security fix (renaming `VITE_GEMINI_API_KEY` → `GEMINI_API_KEY`) successfully stopped the client-side leak.
+- **Three Gemini keys neutralized today**: `AIzaSyAN…wbOM` (in initial-commit git history, rotated by user), `AIzaSyB1nx…` (GROWAGENTKEY in `gen-lang-client-0331746047`, project deleted by user), `AIzaSyDD…` (prior hub key already rotated). Only the current `AIzaSyDa…FKpbE` hub key remains active.
+
 ## [1.8.0] - 2026-05-12
 
 ### Added

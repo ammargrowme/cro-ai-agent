@@ -4,6 +4,60 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 12: v1.8.1 — May 12, 2026 (same-day patch)
+
+**Goal**: Fix CTA-audit false positives discovered when the user ran v1.8.0 live against growmemarketing.ca — 84 reported issues, almost all noise. Also do a security audit for leaked Gemini keys.
+
+### What Was Built
+
+1. **Dropdown / nav-trigger suppression in `api/_extract.js`**
+   - New regex hits for aria-haspopup, aria-expanded, aria-controls, role="menuitem|button", data-toggle, data-bs-toggle, data-dropdown
+   - `DROPDOWN_CLASS_RE` broadened to include generic patterns: `nav-link`, `nav-item`, `menu-link`, `menu-item`, `nav-trigger`, `navlink`, `navitem`, `menulink`, `menuitem`
+   - **Structural fallback**: pre-scan HTML for `<nav>`, `<header>`, `<menu>`, and `role="navigation|menu|menubar"` element ranges. Any empty-href anchor whose `match.index` falls inside any range → marked `isDropdownTrigger`. Catches custom class names (`gm-nav-link`, etc.) that no enumerated list can cover
+
+2. **Interactive widget container detection (same module)**
+   - Same structural approach extended to JS-driven widget classes: flip-box, flip-card, flipbox, accordion, tabs__, tab-content, tab-pane, carousel, slider, swiper, splide, modal-trigger, toggle__trigger, reveal-card, hover-card, service-card, feature-box, info-box, elementor-flip-box
+   - Depth-tracking close-tag matcher computes each widget's `[start, end]` range so nested widgets work correctly
+   - Empty-href anchors inside these ranges → `isDropdownTrigger = true`. Suppresses Elementor flip-box decorative anchors (the remaining 7/11 false positives on growmemarketing.ca after the nav fix alone)
+
+3. **Cloudflare URL exclusion in `api/_extract.js` + `api/analyze.js`**
+   - New exported `shouldSkipHealthCheck(url)` predicate matches `/cdn-cgi/l/email-protection`, `/cdn-cgi/scrape-shield`, `/cdn-cgi/challenge-platform`, `/cdn-cgi/bm/cv/result`, `/cdn-cgi/trace`, `/cdn-cgi/rum`
+   - Wired into Phase 1.5 of `api/analyze.js`: links matching are filtered out of the HEAD-check pass. These shims always 404 server-side; they only resolve via Cloudflare's client-side JS
+
+4. **Cross-page CTA-issue dedup in `api/analyze.js` Phase 3**
+   - `rawCtaIssues = extractedPerPage.flatMap(p => p.cta_issues)` is now grouped by `{severity, issue, evidence}`. Each unique group gets a `page_count`, a 5-page sample, and the original `page` field for backward compat
+   - Sorted by severity rank (high → low) then descending `page_count`
+   - `static-findings` appendix to the recs prompt uses the deduped list with "on N pages" scope strings
+   - Frontend CTA Audit card shows `× N pages` badge when an issue appears on more than one page
+
+5. **Negative-case test fixture**
+   - Smoke script with `<nav>`, `<main>`, `<footer>`, and a fake Elementor flip-box. Confirms:
+     - Nav-context empty hrefs → suppressed ✅
+     - Widget-context empty hrefs → suppressed ✅
+     - Body-content empty hrefs ("Click Here" in `<main>`, "Footer empty" in `<footer>`) → still flagged ✅
+
+6. **Security audit**
+   - Grepped repo, git history, and live JS bundle for `AIza[0-9A-Za-z_-]{20,}`. Source code + production bundle + dist clean. Found ONE leaked key in initial commit `8b5667e` (Mar 12) — `AIzaSyAN…wbOM` — escalated to user, who rotated it.
+   - User also deleted the `gen-lang-client-0331746047` GCP project entirely (killed GROWAGENTKEY + any other keys in that project + the "4 stray requests" metric).
+   - Verified all 3 known compromised keys are dead; only the current hub key (`AIzaSyDa…FKpbE`) remains active.
+
+### Verification
+
+- Live HTML from growmemarketing.ca pre-fix: 4 of 11 empty-href anchors suppressed, 7 false positives flagged
+- Same HTML post-fix: 11 of 11 suppressed, 0 false positives
+- Build: `npx vite build` 2143 modules, 3.5-3.7s, exit 0
+- Vercel deployment `e045018` and `a35be4e` both reached READY on production
+
+### State at Session End
+
+- Branch: `main` (auto-deployed)
+- Build: green
+- All 6 endpoints up
+- Original-ask follow-ups all closed; CHANGELOG + CLAUDE + TODO + this recap updated
+- Open: Vision/Developer/README didn't need updates (no user-facing or architectural change beyond v1.8.0)
+
+---
+
 ## Session 11: v1.8.0 — May 12, 2026
 
 **Goal**: Lift the 4-page audit cap, add link/CTA/form health auditing, integrate the GrowMe CXL training notes into the agent's reasoning. The user wanted a single-domain audit to discover and score every page, flag broken/misrouted CTAs, score form friction, and ground recommendations in named CXL principles.

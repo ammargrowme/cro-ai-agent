@@ -14,12 +14,12 @@ updated: 2026-05-12
 
 ## Quick Status
 
-- **Version**: 1.8.0 (May 12, 2026)
-- **Live URL**: https://cro-ai-agent.vercel.app/
+- **Version**: 1.8.1 (May 12, 2026)
+- **Live URL**: https://cro-ai-agent.vercel.app/ (alias: https://cro.growmeapps.io)
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
-- **Build status**: Passing (`npx vite build` verified — 2143 modules, 3.4s)
-- **All 6 API endpoints**: analyze, chat, generateCode, generateABTests, learnings, **discover** (new)
+- **Build status**: Passing (`npx vite build` verified — 2143 modules, ~3.5s)
+- **All 6 API endpoints**: analyze, chat, generateCode, generateABTests, learnings, **discover** (new in 1.8.0)
 
 ## What This Project Is
 
@@ -28,6 +28,19 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 **Key differentiator**: The app has a **learning system** — it remembers past audits and chat feedback in localStorage, and feeds that knowledge into future AI prompts so recommendations get smarter over time.
 
 ## Session History
+
+### v1.8.1 (May 12, 2026) — CTA Audit False-Positive Fixes
+- Live tested v1.8.0 against growmemarketing.ca → 84 CTA "issues" reported, almost all false positives. Three root causes:
+  - Dropdown nav triggers with `<a href="#">` (Elementor, Webflow, WordPress nav menus)
+  - Cloudflare email-protection URLs (`/cdn-cgi/l/email-protection`) flagged as 404
+  - Same nav repeated on 25 pages → same issue counted 25×
+- Three fixes (commits `e045018`, `a35be4e`):
+  - Aria/data-toggle/role detection + structural nav-context scan (`<nav>`, `<header>`, `<menu>`, `role="navigation|menu|menubar"`) + Elementor/widget container scan (flip-box, accordion, tabs, carousel, slider, swiper, modal-trigger, etc.)
+  - `shouldSkipHealthCheck()` excludes `/cdn-cgi/*` from HEAD checks
+  - CTA issues deduped by `{severity, issue, evidence}` across pages with `page_count` rollup; UI shows "× N pages" badge
+- Verified: 11/11 empty-href anchors on growmemarketing.ca correctly suppressed; genuine broken CTAs in `<main>`, body, footer still flag (negative-case test)
+- Security verification: live production JS bundle scanned, zero `AIzaSy*` matches
+- Three old Gemini keys neutralized today (user actions): initial-commit git-history key rotated; GROWAGENTKEY project (`gen-lang-client-0331746047`) deleted; prior hub key already rotated
 
 ### v1.8.0 (May 12, 2026) — Full-Site Audit, Link/CTA/Form Health, CXL Knowledge
 - Auto page discovery: `/api/discover` endpoint with sitemap.xml + robots.txt + homepage crawl. Up to 25 pages prioritized homepage → contact → pricing → about → services
@@ -221,7 +234,7 @@ After making ANY code change, you MUST update the following files before committ
 | Field | Value |
 |-------|-------|
 | **Last session date** | 2026-05-12 |
-| **What was done** | Shipped v1.8.0 — auto page discovery (`/api/discover`), 25-page audits (was 4), link/CTA/form health audit, form-friction Gemini call (6th AI call), CXL knowledge base (`api/_knowledge.js`) injected into every prompt, per-page scoring batched (5/call), Auto/Manual toggle in UI with discovered-URL chips, new Link Health / CTA Audit / Form Friction cards in the report. Build verified (2143 modules, 3.4s). |
+| **What was done** | Shipped v1.8.0 (full-site audit, link/CTA/form health, CXL knowledge — see Session History) then v1.8.1 fixing CTA audit false positives discovered during live testing on growmemarketing.ca. Three root causes addressed: dropdown nav triggers (now suppressed via aria/data-toggle/role detection + structural `<nav>`/widget-container scan), Cloudflare `/cdn-cgi/*` URLs (now excluded from HEAD checks), and per-page CTA-issue duplication (now deduped with × N pages rollup). Verified 11/11 false positives suppressed on growmemarketing.ca, genuine broken CTAs in main/body/footer still flag. Three old Gemini keys neutralized: initial-commit git-history key rotated, GROWAGENTKEY project deleted, prior hub key already rotated. Live bundle confirmed key-free. |
 | **Next step** | Checklist drill-down (clickable category circles for per-item pass/fail), component extraction (App.jsx now 2400+ lines — pull out the new health cards), and Phase 2 SPA support via `@sparticuz/chromium` + `puppeteer-core` for JS-rendered forms/links. See TODO.md for full plan. |
 | **Blockers** | None |
 

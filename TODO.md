@@ -1,6 +1,6 @@
 # GROWAGENT — Action Plan & Next Steps
 
-**Last updated**: 2026-05-12 (v1.8.0)
+**Last updated**: 2026-05-12 (v1.8.1)
 **Live URL**: https://cro-ai-agent.vercel.app/
 **Auto-deploy**: Every push to `main` goes live automatically
 
@@ -10,13 +10,23 @@
 
 ## YOUR FIRST TASK (Start Here)
 
-**v1.8.0 is shipped.** Auto-discovery, link/CTA/form audit, and CXL knowledge are live. Pick the next priority:
+**v1.8.1 is shipped.** Auto-discovery, link/CTA/form audit, CXL knowledge, plus the false-positive fix sweep are live. Pick the next priority:
 
 1. **Checklist Drill-Down** — Make the 10 checklist circles clickable to expand into per-item pass/fail (each category has 4-8 underlying checklist items already in `api/analyze.js`). Carry CXL principle references into the drill-down view
 2. **Component Extraction** — Continue modularization. `App.jsx` is now 2400+ lines. Pull out: `<LinkHealthCard>`, `<CtaAuditCard>`, `<FormFrictionCard>`, `<PagesAuditedList>` (already self-contained sub-trees), plus the page-discovery toggle into a `<PageSourcePicker>` hook
 3. **JS-rendered SPA support (deferred from v1.8.0)** — Static extraction can't see forms/links rendered by JS frameworks (Next.js after hydration, React SPAs). Investigate `@sparticuz/chromium` + `puppeteer-core` on Vercel for a Phase 2 "deep audit" mode. ~50MB unzipped budget is tight; may need a separate `/api/deep-audit` function
 
 ---
+
+## COMPLETED (v1.8.1 — May 12, 2026)
+
+- [x] **CTA Audit false-positive fixes** — live testing on growmemarketing.ca revealed 84 issues, almost all false positives. Three root causes addressed in commits `e045018` + `a35be4e`:
+  - Dropdown nav triggers (`<a href="#">` inside `<nav>`/`<header>`/`<menu>`/`role="navigation"` or with aria-haspopup/expanded/controls/data-toggle/dropdown class names) now suppressed
+  - Structural widget-container detection for Elementor flip-box, accordion, tabs, carousel, slider, swiper, splide, modal-trigger, reveal-card, service-card, feature-box, info-box
+  - Cloudflare `/cdn-cgi/*` URLs excluded from HEAD-check pass via new `shouldSkipHealthCheck()`
+  - Cross-page CTA-issue dedup with `× N pages` rollup badge in the UI
+  - Verified: 11/11 false positives suppressed on growmemarketing.ca, negative-case test confirms genuine broken CTAs in `<main>`/body/`<footer>` still flag
+- [x] **Three Gemini keys neutralized** — initial-commit git-history key (`AIzaSyAN…wbOM`) rotated; GROWAGENTKEY in `gen-lang-client-0331746047` revoked by deleting the entire GCP project; prior hub key (`AIzaSyDD…`) already rotated. Live JS bundle verified key-free.
 
 ## COMPLETED (v1.8.0 — May 12, 2026)
 
