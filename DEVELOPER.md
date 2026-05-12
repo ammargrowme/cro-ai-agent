@@ -177,7 +177,7 @@ The full GrowMe Basic Website Standards checklist is embedded as a string consta
 If you are an AI assistant working on this codebase:
 
 1. **See CLAUDE.md** for the full context file with rules, schemas, and decisions.
-2. **API Keys**: Server-side only via `process.env.GEMINI_API_KEY` (with `VITE_GEMINI_API_KEY` fallback).
+2. **API Keys**: Server-side only via `process.env.GEMINI_API_KEY`. Do NOT use the `VITE_GEMINI_API_KEY` name — Vite bundles `VITE_*` env vars into the client JS, exposing the key. (The `VITE_GEMINI_API_KEY` fallback was removed 2026-05-12 after the original `GROWAGENTKEY` was found to be leaking via the client bundle.)
 3. **Styling**: Tailwind + inline styles only. No external CSS files.
 4. **Animations**: CSS keyframes only. No Framer Motion.
 5. **Node Compatibility**: Pinned to Vite 5 for Node 18 support.

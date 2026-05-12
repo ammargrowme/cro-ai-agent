@@ -73,7 +73,7 @@ See [docs/SCHEMAS.md](docs/SCHEMAS.md) for full JSON examples and field referenc
 
 ```bash
 npm install
-cp .env.example .env  # Add your VITE_GEMINI_API_KEY
+cp .env.example .env  # Add your GEMINI_API_KEY (server-side only — do NOT use VITE_ prefix, that bundles into client JS)
 npm run dev            # Local dev at http://localhost:5173
 ```
 

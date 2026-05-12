@@ -1,7 +1,8 @@
 
 import { validateUrl, rateLimit } from './_utils.js';
 
-const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
+// Server-side only — never reference VITE_ vars here, those would leak into client bundle.
+const apiKey = process.env.GEMINI_API_KEY || "";
 
 // ─── CRO CHECKLIST (from GrowMe Basic Website Standards) ──────────
 const CRO_CHECKLIST = `

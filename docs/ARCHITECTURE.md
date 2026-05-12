@@ -61,7 +61,7 @@ Each category is scored 0-100 by the AI, and the top 5 critical failures are fla
 
 - **Vite 5** (not 6) — pinned for Node.js 18 compatibility
 - **No external CSS** — use Tailwind or `<style>` blocks in App.jsx
-- **API keys** — `GEMINI_API_KEY` env var (with `VITE_GEMINI_API_KEY` fallback), read server-side only via `process.env`
+- **API keys** — `GEMINI_API_KEY` env var ONLY (no VITE_ prefix), read server-side only via `process.env`. The `VITE_GEMINI_API_KEY` fallback was removed 2026-05-12 because Vite bundles `VITE_*` vars into the client JS bundle, leaking the key publicly
 - **CORS proxy** — not currently used (direct fetch in serverless functions)
 - **Vercel timeout** — 300s max for API functions (`vercel.json`)
 - **3-4 parallel AI calls** — overview + recommendations + checklist scoring + competitor analysis (when competitors provided) happen simultaneously in Phase 2

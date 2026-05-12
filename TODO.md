@@ -188,7 +188,7 @@ These features are implemented but need real-world testing with a Gemini API key
 1. Read `CLAUDE.md` for full project context (architecture, schemas, rules, session history)
 2. Read this file (`TODO.md`) for what's done and what's next
 3. Run `npm install && npm run dev` to start locally
-4. Set `VITE_GEMINI_API_KEY` in `.env` for local testing (copy from `.env.example`)
+4. Set `GEMINI_API_KEY` in `.env` for local testing (copy from `.env.example`) — do NOT use the `VITE_` prefix, that bundles into client JS
 5. The app auto-deploys to https://cro-ai-agent.vercel.app/ on every push to `main`
 6. Start with "YOUR FIRST TASK" at the top of this file
 7. After testing, pick the next item from "NEXT FEATURES TO BUILD"

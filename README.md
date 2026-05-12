@@ -140,8 +140,9 @@ Key rules:
 2. **Setup Env**
    Create `.env`:
    ```env
-   VITE_GEMINI_API_KEY=YOUR_KEY_HERE
+   GEMINI_API_KEY=YOUR_KEY_HERE
    ```
+   ⚠️ Do NOT use the `VITE_` prefix — Vite bundles `VITE_*` env vars into the client JS, which would expose your Gemini key publicly. `GEMINI_API_KEY` (no prefix) stays server-side and is read by the `/api/*` Vercel functions.
 
 3. **Launch**
    ```bash

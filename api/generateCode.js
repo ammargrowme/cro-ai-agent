@@ -1,5 +1,6 @@
 
-const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
+// Server-side only — never reference VITE_ vars here, those would leak into client bundle.
+const apiKey = process.env.GEMINI_API_KEY || "";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });

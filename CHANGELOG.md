@@ -2,6 +2,22 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [Security] - 2026-05-12
+
+### Fixed
+- **CRITICAL: Gemini key was being bundled into client JS** — `.env.development.local` declared `VITE_GEMINI_API_KEY=...`. Vite bundles every `VITE_*` env var into the client-side JS chunk, which meant the key was publicly extractable from `https://cro-ai-agent.vercel.app/` via DevTools → Network → main JS. Server-side calls in `/api/*.js` were the only real consumer, so the `VITE_` prefix was incorrect from day one. Renamed env var to `GEMINI_API_KEY` (no prefix), removed `|| process.env.VITE_GEMINI_API_KEY` fallback from `api/analyze.js`, `api/chat.js`, `api/generateCode.js`, `api/generateABTests.js`. Updated docs (CLAUDE.md, README.md, TODO.md, DEVELOPER.md, docs/ARCHITECTURE.md).
+
+### Changed
+- **Migrated to new hub-managed API key** — Gemini key is now sourced from `growme-217600` (the consolidation hub), label "CRO AI Agent Gemini (server-side)". Old key from `gen-lang-client-0331746047` (GROWAGENTKEY) remains live until Vercel env swap + rotation per `Code/Ops/GCP Audit/reports/migration-execution-2026-05-12.md`.
+
+### USER ACTION REQUIRED (after this deploy)
+1. Vercel dashboard → cro-ai-agent → Settings → Environment Variables → DELETE `VITE_GEMINI_API_KEY` from all 3 environments (Production / Preview / Development).
+2. ADD `GEMINI_API_KEY` = new hub key value to all 3 environments.
+3. Trigger redeploy.
+4. Verify on `https://cro-ai-agent.vercel.app/`: open DevTools → Network → main JS bundle → grep for `AIzaSy` → no key visible.
+5. Trigger an analyze + chat + code-gen + A/B test to confirm all 4 server endpoints work.
+6. After deploy verified: Console-disable (do NOT delete) the old GROWAGENTKEY in project `gen-lang-client-0331746047` so leaked copies stop working.
+
 ## [Docs] - 2026-04-10
 
 ### Changed
