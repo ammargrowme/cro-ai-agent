@@ -23,6 +23,21 @@ const PHONE_CTA_RE = /\b(call\s+us|call\s+now|phone|dial)\b/i;
 const NON_HTTP_PROTOCOLS = /^(mailto:|tel:|javascript:|sms:|whatsapp:|data:)/i;
 const FILE_EXT_RE = /\.(pdf|jpg|jpeg|png|gif|svg|webp|zip|tar|gz|mp4|mp3|woff2?|ttf|eot|ico|css|js)(\?|#|$)/i;
 
+// Dropdown / menu-trigger detection — an <a href="#"> is INTENTIONAL when the
+// link opens a sub-menu via JS. WordPress / Elementor / Webflow all emit class
+// names like menu-item-has-children. Aria attrs are the most reliable signal.
+const DROPDOWN_CLASS_RE = /\b(menu-item-has-children|has-children|has-submenu|has-dropdown|dropdown-toggle|dropdown__trigger|submenu-trigger|nav-dropdown|menu-trigger|js-dropdown|hs-menu-children-wrapper|sub-menu-trigger)\b/i;
+
+// URLs we skip during the HEAD-check step because they're known JS-hydrated
+// shims that always return 4xx when fetched server-side (false positive
+// "broken link" otherwise). Cloudflare email-protection is the big one.
+const IGNORED_HEALTH_CHECK_RE = /\/cdn-cgi\/(l\/email-protection|scrape-shield|challenge-platform|bm\/cv\/result|trace|rum)/i;
+
+export function shouldSkipHealthCheck(url) {
+  if (!url) return true;
+  return IGNORED_HEALTH_CHECK_RE.test(url);
+}
+
 // ─── decodeHtmlEntities ──────────────────────────────────────
 // Decodes the most common HTML entities found in attribute values.
 function decodeHtmlEntities(text) {
@@ -107,6 +122,16 @@ export function extractLinks(html, baseUrl) {
     const isPhoneLabel = PHONE_CTA_RE.test(text);
     const isCta = (CTA_TEXT_RE.test(text) || CTA_CLASS_RE.test(className)) && text.length > 0 && text.length < 80;
 
+    // Dropdown / sub-menu trigger detection — an <a href="#"> with these
+    // signals is JS-handled, not a broken CTA. Suppresses the most common
+    // false-positive class in WordPress / Elementor / Webflow navs.
+    const ariaHasPopup = /\baria-haspopup\s*=\s*["'](?:true|menu|listbox|dialog)["']/i.test(attrs);
+    const ariaExpanded = /\baria-expanded\s*=\s*["'][^"']+["']/i.test(attrs);
+    const ariaControls = /\baria-controls\s*=\s*["'][^"']+["']/i.test(attrs);
+    const roleMenuitem = /\brole\s*=\s*["'](?:menuitem|button)["']/i.test(attrs);
+    const dataToggle = /\bdata-(?:toggle|target|dropdown|bs-toggle)\s*=/i.test(attrs);
+    const isDropdownTrigger = ariaHasPopup || ariaExpanded || ariaControls || roleMenuitem || dataToggle || DROPDOWN_CLASS_RE.test(className);
+
     links.push({
       href: normalized || rawHref || "",
       text: text.substring(0, 120),
@@ -118,6 +143,7 @@ export function extractLinks(html, baseUrl) {
       isMailto,
       isEmpty,
       isGenericCta: isCta && GENERIC_CTA_RE.test(text),
+      isDropdownTrigger,
       className: className.substring(0, 80)
     });
   }
@@ -499,8 +525,11 @@ export function detectCtaIssues(pageUrl, links, buttons) {
   const issues = [];
 
   // 1. Empty / "#" / javascript: hrefs that are visible CTAs.
+  // Skip dropdown / sub-menu triggers — those use href="#" intentionally and
+  // are handled by JS. Without this guard, every WordPress / Elementor /
+  // Webflow nav menu lights up the audit with false positives.
   for (const l of links) {
-    if (l.isEmpty && l.text && l.text.length > 0 && l.text.length < 80) {
+    if (l.isEmpty && l.text && l.text.length > 0 && l.text.length < 80 && !l.isDropdownTrigger) {
       issues.push({
         page: pageUrl,
         severity: 'high',

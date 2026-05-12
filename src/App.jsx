@@ -2147,7 +2147,12 @@ Your job:
                       <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                         {report.cta_audit.issues.slice(0, 12).map((i, idx) => (
                           <div key={idx} className={`rounded-lg px-3 py-2 text-[12px] border ${i.severity === 'high' ? 'bg-[#F87171]/5 border-[#F87171]/15' : 'bg-[#F59E0B]/5 border-[#F59E0B]/15'}`}>
-                            <div className="text-white font-medium">{i.issue}</div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-white font-medium">{i.issue}</span>
+                              {i.page_count > 1 && (
+                                <span className="text-[10px] text-[#8B95A5] shrink-0">× {i.page_count} pages</span>
+                              )}
+                            </div>
                             <div className="text-[10px] text-[#5A6270] truncate" title={i.evidence}>{i.evidence}</div>
                           </div>
                         ))}

@@ -1,7 +1,7 @@
 
 import { validateUrl, rateLimit } from './_utils.js';
 import { CXL_PRINCIPLES } from './_knowledge.js';
-import { extractLinks, extractButtons, extractForms, checkUrls, detectCtaIssues } from './_extract.js';
+import { extractLinks, extractButtons, extractForms, checkUrls, detectCtaIssues, shouldSkipHealthCheck } from './_extract.js';
 
 // Server-side only — never reference VITE_ vars here, those would leak into client bundle.
 const apiKey = process.env.GEMINI_API_KEY || "";
@@ -543,11 +543,15 @@ export default async function handler(req, res) {
     });
 
     // Build the unique URL set for HEAD checks — internal + external links
-    // that point at real http(s) URLs. Skip tel:/mailto:/empty.
+    // that point at real http(s) URLs. Skip tel:/mailto:/empty AND known
+    // JS-hydrated shims (Cloudflare email-protection etc.) that always 404
+    // when fetched server-side and would generate false "broken link"
+    // reports.
     const allUrlsToCheck = [...new Set(
       extractedPerPage
         .flatMap(p => p.links)
         .filter(l => l.href && /^https?:/i.test(l.href) && !l.isEmpty)
+        .filter(l => !shouldSkipHealthCheck(l.href))
         .map(l => l.href)
     )];
 
@@ -583,11 +587,42 @@ export default async function handler(req, res) {
         };
       });
 
-    const allCtaIssues = extractedPerPage.flatMap(p => p.cta_issues);
+    const rawCtaIssues = extractedPerPage.flatMap(p => p.cta_issues);
+
+    // Dedupe identical CTA issues across pages. The same dropdown / broken
+    // link appears on every page that shares the nav, which previously
+    // inflated "84 issues" when there were really ~5 unique problems. Roll
+    // them up with a page_count so the operator sees the actual signal.
+    const allCtaIssues = (() => {
+      const grouped = new Map();
+      for (const i of rawCtaIssues) {
+        const key = `${i.severity}|${i.issue}|${i.evidence}`;
+        const existing = grouped.get(key);
+        if (existing) {
+          existing.page_count += 1;
+          if (existing.pages.length < 5) existing.pages.push(i.page);
+        } else {
+          grouped.set(key, {
+            issue: i.issue,
+            severity: i.severity,
+            evidence: i.evidence,
+            page: i.page,           // first page for backward compat
+            pages: [i.page],
+            page_count: 1
+          });
+        }
+      }
+      // Order by severity (high first) then descending page count.
+      const sevRank = { high: 0, medium: 1, low: 2 };
+      return [...grouped.values()].sort((a, b) =>
+        (sevRank[a.severity] ?? 3) - (sevRank[b.severity] ?? 3) ||
+        b.page_count - a.page_count
+      );
+    })();
     const totalForms = extractedPerPage.flatMap(p =>
       p.forms.map(f => ({ ...f, pageUrl: p.url }))
     );
-    console.log(`[${logId}] [PHASE 1.5 DONE] Links: ${allUrlsToCheck.length} (${brokenLinks.length} broken) | CTA issues: ${allCtaIssues.length} | Forms: ${totalForms.length}`);
+    console.log(`[${logId}] [PHASE 1.5 DONE] Links: ${allUrlsToCheck.length} (${brokenLinks.length} broken) | CTA issues: ${allCtaIssues.length} unique (${rawCtaIssues.length} raw) | Forms: ${totalForms.length}`);
 
     // ══════════════════════════════════════════════════
     // PHASE 2: Three AI calls IN PARALLEL
@@ -692,9 +727,10 @@ ${mainHtml}${multiPageContext}`;
         });
       }
       if (allCtaIssues.length > 0) {
-        lines.push(`\nCTA / BUTTON ISSUES (${allCtaIssues.length}):`);
+        lines.push(`\nCTA / BUTTON ISSUES (${allCtaIssues.length} unique, deduped across pages):`);
         allCtaIssues.slice(0, 15).forEach(i => {
-          lines.push(`- [${i.severity}] ${i.issue} — ${i.evidence} (on ${i.page})`);
+          const scope = i.page_count > 1 ? `on ${i.page_count} pages` : `on ${i.page}`;
+          lines.push(`- [${i.severity}] ${i.issue} — ${i.evidence} (${scope})`);
         });
       }
       if (totalForms.length > 0) {
