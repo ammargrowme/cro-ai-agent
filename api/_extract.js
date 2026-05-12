@@ -26,7 +26,9 @@ const FILE_EXT_RE = /\.(pdf|jpg|jpeg|png|gif|svg|webp|zip|tar|gz|mp4|mp3|woff2?|
 // Dropdown / menu-trigger detection — an <a href="#"> is INTENTIONAL when the
 // link opens a sub-menu via JS. WordPress / Elementor / Webflow all emit class
 // names like menu-item-has-children. Aria attrs are the most reliable signal.
-const DROPDOWN_CLASS_RE = /\b(menu-item-has-children|has-children|has-submenu|has-dropdown|dropdown-toggle|dropdown__trigger|submenu-trigger|nav-dropdown|menu-trigger|js-dropdown|hs-menu-children-wrapper|sub-menu-trigger)\b/i;
+// Generic nav-link / menu-item patterns also catch custom site-specific
+// classes like gm-nav-link (\b matches `-` boundaries).
+const DROPDOWN_CLASS_RE = /\b(menu-item-has-children|has-children|has-submenu|has-dropdown|dropdown-toggle|dropdown__trigger|submenu-trigger|nav-dropdown|menu-trigger|js-dropdown|hs-menu-children-wrapper|sub-menu-trigger|nav-link|nav-item|menu-link|menu-item|nav-trigger|navlink|navitem|menulink|menuitem)\b/i;
 
 // URLs we skip during the HEAD-check step because they're known JS-hydrated
 // shims that always return 4xx when fetched server-side (false positive
@@ -95,6 +97,69 @@ export function normalizeUrl(href, baseUrl) {
 export function extractLinks(html, baseUrl) {
   if (!html) return [];
   const baseOrigin = (() => { try { return new URL(baseUrl).origin; } catch { return null; } })();
+
+  // Pre-compute ranges for elements where empty-href anchors are conventionally
+  // JS-handled, not broken. Two categories:
+  //   (1) NAV context — <nav>, <header>, <menu>, role="navigation|menu|menubar"
+  //   (2) INTERACTIVE WIDGET context — Elementor flip-box, accordion, tabs,
+  //       carousel, slider, modal-trigger, etc. These widgets emit decorative
+  //       <a href="#"> elements that don't navigate when clicked; the widget
+  //       intercepts them via JS. Without this guard, every Elementor / Divi /
+  //       WPBakery site lights up with dozens of false positives.
+  const navRanges = [];
+
+  // (1) <nav> / <header> / <menu>
+  const navRe = /<(nav|header|menu)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  let nm;
+  while ((nm = navRe.exec(html)) !== null) {
+    navRanges.push([nm.index, nm.index + nm[0].length]);
+  }
+  // (1b) role="navigation|menu|menubar"
+  const navRoleRe = /<([a-z]+)\b([^>]*\brole\s*=\s*["'](?:navigation|menu|menubar)["'][^>]*)>([\s\S]*?)<\/\1>/gi;
+  while ((nm = navRoleRe.exec(html)) !== null) {
+    navRanges.push([nm.index, nm.index + nm[0].length]);
+  }
+  // (2) Interactive widget containers — class includes a known JS-widget
+  //     pattern. We match the OPENING tag, then find its matching close by
+  //     scanning forward; for our purposes a coarse range is enough.
+  const WIDGET_CLASS_RE = /class\s*=\s*["'][^"']*\b(?:flip-box|flip-card|flipbox|accordion|tabs__|tab-content|tab-pane|carousel|slider|swiper|splide|modal-trigger|toggle__trigger|reveal-card|hover-card|service-card|feature-box|info-box|elementor-flip-box)\b[^"']*["']/i;
+  const widgetTagRe = /<([a-z]+)\b([^>]*)>/gi;
+  while ((nm = widgetTagRe.exec(html)) !== null) {
+    if (!WIDGET_CLASS_RE.test(nm[2])) continue;
+    const tagName = nm[1].toLowerCase();
+    const startPos = nm.index;
+    // Find matching close tag — coarse, depth-limited scan.
+    const closeRe = new RegExp(`</${tagName}\\b[^>]*>`, 'gi');
+    closeRe.lastIndex = widgetTagRe.lastIndex;
+    let depth = 1;
+    const openSameRe = new RegExp(`<${tagName}\\b[^>]*>`, 'gi');
+    openSameRe.lastIndex = widgetTagRe.lastIndex;
+    let endPos = -1;
+    while (depth > 0 && closeRe.lastIndex < html.length) {
+      const nextOpen = openSameRe.exec(html);
+      const nextClose = closeRe.exec(html);
+      if (!nextClose) break;
+      if (nextOpen && nextOpen.index < nextClose.index) {
+        depth++;
+        closeRe.lastIndex = nextOpen.index + nextOpen[0].length;
+      } else {
+        depth--;
+        if (depth === 0) {
+          endPos = nextClose.index + nextClose[0].length;
+          break;
+        }
+      }
+    }
+    if (endPos > 0) navRanges.push([startPos, endPos]);
+  }
+
+  const isInNavContext = (pos) => {
+    for (let i = 0; i < navRanges.length; i++) {
+      if (pos >= navRanges[i][0] && pos < navRanges[i][1]) return true;
+    }
+    return false;
+  };
+
   const links = [];
   const re = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
   let m;
@@ -124,13 +189,18 @@ export function extractLinks(html, baseUrl) {
 
     // Dropdown / sub-menu trigger detection — an <a href="#"> with these
     // signals is JS-handled, not a broken CTA. Suppresses the most common
-    // false-positive class in WordPress / Elementor / Webflow navs.
+    // false-positive class in WordPress / Elementor / Webflow / custom navs.
     const ariaHasPopup = /\baria-haspopup\s*=\s*["'](?:true|menu|listbox|dialog)["']/i.test(attrs);
     const ariaExpanded = /\baria-expanded\s*=\s*["'][^"']+["']/i.test(attrs);
     const ariaControls = /\baria-controls\s*=\s*["'][^"']+["']/i.test(attrs);
     const roleMenuitem = /\brole\s*=\s*["'](?:menuitem|button)["']/i.test(attrs);
     const dataToggle = /\bdata-(?:toggle|target|dropdown|bs-toggle)\s*=/i.test(attrs);
-    const isDropdownTrigger = ariaHasPopup || ariaExpanded || ariaControls || roleMenuitem || dataToggle || DROPDOWN_CLASS_RE.test(className);
+    // Structural fallback: any empty-href anchor inside <nav> / <header> /
+    // <menu> / role="navigation" is a JS-handled nav trigger by convention.
+    // This catches custom class names (like gm-nav-link) that enumerated
+    // regexes will never fully cover.
+    const inNavContext = isEmpty && isInNavContext(m.index);
+    const isDropdownTrigger = ariaHasPopup || ariaExpanded || ariaControls || roleMenuitem || dataToggle || DROPDOWN_CLASS_RE.test(className) || inNavContext;
 
     links.push({
       href: normalized || rawHref || "",
