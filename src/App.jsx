@@ -92,6 +92,15 @@ function AppContent() {
   const [additionalPagesInput, setAdditionalPagesInput] = useState("");
   const [customPageSpeedKey, setCustomPageSpeedKey] = useState(() => getSafeLocalStorage("growagent_pagespeed_key"));
 
+  // v1.8.0 — auto-discovery state. "auto" mode crawls the domain via
+  // /api/discover and lets the user confirm/deselect URLs; "manual" mode
+  // keeps the legacy textarea (no longer capped at 4).
+  const [discoveryMode, setDiscoveryMode] = useState("auto");
+  const [discoveredPages, setDiscoveredPages] = useState([]); // [{ url, selected }]
+  const [discoverySource, setDiscoverySource] = useState(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverError, setDiscoverError] = useState(null);
+
   const [appError, setAppError] = useState(null);
 
   // App Workflow States
@@ -168,6 +177,53 @@ function AppContent() {
     return () => clearTimeout(timer);
   }, [status, countdown]);
 
+  // v1.8.0 — call /api/discover to auto-populate the page list. Triggered
+  // by the "Discover pages" button in Auto mode, or implicitly when the
+  // user toggles into Auto with a non-empty URL.
+  const handleDiscover = useCallback(async () => {
+    if (!url) {
+      setDiscoverError("Enter a URL above first.");
+      return;
+    }
+    const formattedUrl = url.startsWith('http') ? url : `https://${url}`;
+    setDiscovering(true);
+    setDiscoverError(null);
+    try {
+      const res = await fetch('/api/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: formattedUrl })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Discovery failed' }));
+        throw new Error(err.error || 'Discovery failed');
+      }
+      const data = await res.json();
+      const origin = (() => { try { return new URL(formattedUrl).origin; } catch { return formattedUrl; } })();
+      // Pre-select all returned pages except the primary URL itself; the
+      // primary URL is always scraped server-side so it's redundant here.
+      const pages = (data.pages || [])
+        .filter(p => p !== formattedUrl && p !== `${origin}/` && p !== origin)
+        .map(p => ({ url: p, selected: true }));
+      setDiscoveredPages(pages);
+      setDiscoverySource(data.source || 'crawl');
+    } catch (err) {
+      setDiscoverError(err.message || 'Failed to discover pages.');
+      setDiscoveredPages([]);
+      setDiscoverySource(null);
+    } finally {
+      setDiscovering(false);
+    }
+  }, [url]);
+
+  const toggleDiscoveredPage = useCallback((u) => {
+    setDiscoveredPages(prev => prev.map(p => p.url === u ? { ...p, selected: !p.selected } : p));
+  }, []);
+
+  const selectAllDiscovered = useCallback((selected) => {
+    setDiscoveredPages(prev => prev.map(p => ({ ...p, selected })));
+  }, []);
+
   const handleAnalyze = async (e) => {
     e.preventDefault();
     if (!url) return;
@@ -179,12 +235,25 @@ function AppContent() {
     const hasCompetitors = competitorsInput.trim().length > 0;
     const competitorCount = competitorsInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).length;
     const hostname = (() => { try { return new URL(formattedUrl).hostname; } catch { return formattedUrl; } })();
-    const additionalPagesArr = additionalPagesInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 4).map(p => p.startsWith('http') ? p : `https://${p}`);
+    // v1.8.0 — page list comes from either the manual textarea OR the
+    // auto-discover preview (user-selected URLs). Cap at 25 to match the
+    // server's MAX_ADDITIONAL_PAGES. Strip the primary URL if it sneaks
+    // in (it's already scraped as `url`).
+    const manualPages = additionalPagesInput
+      .split(/[,\n]+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0)
+      .map(p => p.startsWith('http') ? p : `https://${p}`);
+    const autoPages = discoveredPages.filter(p => p.selected).map(p => p.url);
+    const additionalPagesArr = (discoveryMode === "auto" ? autoPages : manualPages)
+      .filter(p => p !== formattedUrl && p !== `${formattedUrl}/`)
+      .slice(0, 25);
     const hasPages = additionalPagesArr.length > 0;
     const dynamicSteps = [
       { id: 'scrape', label: `Scraping ${hostname}${hasPages ? ` + ${additionalPagesArr.length} page${additionalPagesArr.length > 1 ? 's' : ''}` : ''}${hasCompetitors ? ` + ${competitorCount} competitor${competitorCount > 1 ? 's' : ''}` : ''}...`, icon: <Code size={18} />, detail: 'Fetching HTML, removing scripts & styles' },
       { id: 'metrics', label: 'Running PageSpeed & capturing screenshot...', icon: <Activity size={18} />, detail: 'Google Lighthouse performance audit' },
-      { id: 'ai_analysis', label: `AI scoring against 10 checklist categories${targetKeywords.trim() ? ' + keyword alignment' : ''}...`, icon: <BrainCircuit size={18} />, detail: `${3 + (hasCompetitors ? 1 : 0) + (hasPages ? 1 : 0)} parallel AI calls${hasPages ? ' (including per-page scoring)' : ''}` },
+      { id: 'health', label: `Checking links, CTAs & forms${hasPages ? ` across ${additionalPagesArr.length + 1} pages` : ''}...`, icon: <ShieldCheck size={18} />, detail: 'HEAD-checking URLs, extracting buttons & forms' },
+      { id: 'ai_analysis', label: `AI scoring against checklist + CXL principles${targetKeywords.trim() ? ' + keyword alignment' : ''}...`, icon: <BrainCircuit size={18} />, detail: `${3 + (hasCompetitors ? 1 : 0) + (hasPages ? 1 : 0) + 1} parallel AI calls (including form-friction analysis)` },
       { id: 'compile', label: 'Compiling final report...', icon: <Target size={18} />, detail: `${serverLearnings.totalLearnings > 0 ? `Enhanced with ${serverLearnings.totalLearnings} past audit${serverLearnings.totalLearnings !== 1 ? 's' : ''} learned` : 'Generating actionable recommendations'}` },
     ];
     setAnalysisSteps(dynamicSteps);
@@ -921,7 +990,7 @@ Your job:
     finally { setIsExporting(false); }
   };
 
-  const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setTargetKeywords(""); setAdditionalPagesInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); setShowExportMenu(false); };
+  const handleReset = () => { setStatus("idle"); setAppError(null); setUrl(""); setAdditionalContext(""); setCompetitorsInput(""); setTargetKeywords(""); setAdditionalPagesInput(""); setShowAdvanced(false); setReport(null); setCodePatches({}); setAbTests({}); setChatHistory([]); setShowExportMenu(false); setDiscoveredPages([]); setDiscoverySource(null); setDiscoverError(null); };
   const filteredRecommendations = useMemo(() => report?.recommendations?.filter(r => activeTab === 'all' || r.category?.toLowerCase() === activeTab || r.priority?.toLowerCase() === activeTab) || [], [report?.recommendations, activeTab]);
   const [flippedCards, setFlippedCards] = useState({});
   const toggleFlip = (id) => setFlippedCards(prev => ({ ...prev, [id]: !prev[id] }));
@@ -1379,15 +1448,74 @@ Your job:
                     </div>
 
                     <div className="space-y-2.5">
-                      <label className="text-[#8B95A5] text-xs font-semibold uppercase tracking-wider flex items-center gap-2">
-                        <LayoutGrid size={14} /> Batch Pages <span className="text-[10px] font-normal text-[#5A6270] lowercase tracking-normal ml-1">(Max 4, same site)</span>
-                      </label>
-                      <textarea
-                        value={additionalPagesInput}
-                        onChange={(e) => setAdditionalPagesInput(e.target.value)}
-                        placeholder="E.g., example.com/pricing&#10;example.com/about&#10;example.com/contact"
-                        className="w-full bg-[#08090D] border border-[#1E222A] rounded-xl p-4 text-white text-[15px] focus:outline-none focus:border-[#F25430]/40 focus:ring-1 focus:ring-[#F25430]/20 transition-all resize-none h-20 placeholder:text-[#3A4050]"
-                      />
+                      <div className="flex items-center justify-between">
+                        <label className="text-[#8B95A5] text-xs font-semibold uppercase tracking-wider flex items-center gap-2">
+                          <LayoutGrid size={14} /> Batch Pages <span className="text-[10px] font-normal text-[#5A6270] lowercase tracking-normal ml-1">(up to 25, same site)</span>
+                        </label>
+                        <div className="inline-flex rounded-lg overflow-hidden border border-[#1E222A] text-[10px] font-semibold uppercase tracking-wider">
+                          <button
+                            type="button"
+                            onClick={() => setDiscoveryMode("auto")}
+                            className={`px-2.5 py-1 transition-colors ${discoveryMode === "auto" ? "bg-[#F25430] text-white" : "bg-[#08090D] text-[#5A6270] hover:text-[#8B95A5]"}`}
+                          >Auto</button>
+                          <button
+                            type="button"
+                            onClick={() => setDiscoveryMode("manual")}
+                            className={`px-2.5 py-1 transition-colors ${discoveryMode === "manual" ? "bg-[#F25430] text-white" : "bg-[#08090D] text-[#5A6270] hover:text-[#8B95A5]"}`}
+                          >Manual</button>
+                        </div>
+                      </div>
+
+                      {discoveryMode === "auto" ? (
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={handleDiscover}
+                            disabled={!url || discovering}
+                            className="w-full flex items-center justify-center gap-2 bg-[#08090D] border border-[#1E222A] hover:border-[#F25430]/40 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl px-4 py-3 text-white text-[13px] font-semibold transition-all"
+                          >
+                            {discovering ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                            {discovering ? "Discovering pages…" : (discoveredPages.length > 0 ? "Re-discover pages" : "Discover pages on this domain")}
+                          </button>
+                          {discoverError && (
+                            <div className="text-[11px] text-red-400">{discoverError}</div>
+                          )}
+                          {discoveredPages.length > 0 && (
+                            <div className="bg-[#08090D] border border-[#1E222A] rounded-xl p-3 space-y-2 max-h-56 overflow-y-auto">
+                              <div className="flex items-center justify-between text-[10px] text-[#5A6270]">
+                                <span>
+                                  {discoveredPages.filter(p => p.selected).length} of {discoveredPages.length} selected
+                                  {discoverySource && <> · via {discoverySource}</>}
+                                </span>
+                                <div className="flex gap-2">
+                                  <button type="button" onClick={() => selectAllDiscovered(true)} className="text-[#8B95A5] hover:text-white">All</button>
+                                  <button type="button" onClick={() => selectAllDiscovered(false)} className="text-[#8B95A5] hover:text-white">None</button>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {discoveredPages.map(p => (
+                                  <button
+                                    type="button"
+                                    key={p.url}
+                                    onClick={() => toggleDiscoveredPage(p.url)}
+                                    className={`text-[11px] px-2 py-1 rounded-md border transition-colors truncate max-w-[280px] ${p.selected ? "bg-[#F25430]/10 border-[#F25430]/40 text-white" : "bg-[#08090D] border-[#1E222A] text-[#5A6270] hover:text-[#8B95A5]"}`}
+                                    title={p.url}
+                                  >
+                                    {(() => { try { return new URL(p.url).pathname || '/'; } catch { return p.url; } })()}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <textarea
+                          value={additionalPagesInput}
+                          onChange={(e) => setAdditionalPagesInput(e.target.value)}
+                          placeholder="E.g., example.com/pricing&#10;example.com/about&#10;example.com/contact"
+                          className="w-full bg-[#08090D] border border-[#1E222A] rounded-xl p-4 text-white text-[15px] focus:outline-none focus:border-[#F25430]/40 focus:ring-1 focus:ring-[#F25430]/20 transition-all resize-none h-20 placeholder:text-[#3A4050]"
+                        />
+                      )}
                     </div>
 
                     {/* Row 3: API Key */}
@@ -1961,6 +2089,135 @@ Your job:
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* SITE HEALTH (v1.8.0 — link/CTA/form static audit) */}
+            {(report.link_health || report.cta_audit || report.form_health) && (
+              <div className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                {/* Link Health */}
+                {report.link_health && (
+                  <div className="rounded-2xl border border-[#1E222A] bg-[#0E1014] p-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-[11px] font-bold uppercase tracking-widest text-[#8B95A5] flex items-center gap-2">
+                        <Globe size={14} /> Link Health
+                      </div>
+                      <div className={`text-[11px] font-bold ${report.link_health.broken_links?.length > 0 ? 'text-[#F87171]' : 'text-[#10B981]'}`}>
+                        {report.link_health.broken_links?.length || 0} broken
+                      </div>
+                    </div>
+                    <div className="text-[12px] text-[#5A6270] mb-3">
+                      {report.link_health.total_checked || 0} URLs checked across {report.pages_audited?.length || 1} pages
+                    </div>
+                    {report.link_health.broken_links?.length > 0 ? (
+                      <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                        {report.link_health.broken_links.slice(0, 12).map((b, i) => (
+                          <div key={i} className="bg-[#F87171]/5 border border-[#F87171]/15 rounded-lg px-3 py-2 text-[12px]">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-white font-medium truncate" title={b.link_text}>{b.link_text || '(no text)'}</span>
+                              <span className="text-[#F87171] text-[10px] shrink-0">{b.status || 'err'}</span>
+                            </div>
+                            <div className="text-[10px] text-[#5A6270] truncate" title={b.url}>{b.url}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[12px] text-[#10B981] flex items-center gap-2"><CheckCircle size={14} /> All links reachable.</div>
+                    )}
+                  </div>
+                )}
+
+                {/* CTA Audit */}
+                {report.cta_audit && (
+                  <div className="rounded-2xl border border-[#1E222A] bg-[#0E1014] p-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-[11px] font-bold uppercase tracking-widest text-[#8B95A5] flex items-center gap-2">
+                        <MousePointerClick size={14} /> CTA Audit
+                      </div>
+                      <div className={`text-[11px] font-bold ${report.cta_audit.issues?.length > 0 ? 'text-[#F59E0B]' : 'text-[#10B981]'}`}>
+                        {report.cta_audit.issues?.length || 0} issues
+                      </div>
+                    </div>
+                    <div className="text-[12px] text-[#5A6270] mb-3">
+                      {report.cta_audit.total_ctas || 0} CTAs found across {report.pages_audited?.length || 1} pages
+                    </div>
+                    {report.cta_audit.issues?.length > 0 ? (
+                      <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                        {report.cta_audit.issues.slice(0, 12).map((i, idx) => (
+                          <div key={idx} className={`rounded-lg px-3 py-2 text-[12px] border ${i.severity === 'high' ? 'bg-[#F87171]/5 border-[#F87171]/15' : 'bg-[#F59E0B]/5 border-[#F59E0B]/15'}`}>
+                            <div className="text-white font-medium">{i.issue}</div>
+                            <div className="text-[10px] text-[#5A6270] truncate" title={i.evidence}>{i.evidence}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[12px] text-[#10B981] flex items-center gap-2"><CheckCircle size={14} /> No CTA issues detected.</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Form Friction */}
+                {report.form_health && (
+                  <div className="rounded-2xl border border-[#1E222A] bg-[#0E1014] p-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-[11px] font-bold uppercase tracking-widest text-[#8B95A5] flex items-center gap-2">
+                        <ClipboardCheck size={14} /> Form Friction
+                      </div>
+                      <div className="text-[11px] font-bold text-[#8B95A5]">
+                        {report.form_health.total_forms || 0} forms
+                      </div>
+                    </div>
+                    {report.form_health.total_forms === 0 ? (
+                      <div className="text-[12px] text-[#5A6270]">No forms detected. Note: JS-rendered forms (SPAs) are not visible to static analysis.</div>
+                    ) : (
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {report.form_health.per_form?.slice(0, 8).map((f, i) => {
+                          const ai = f.ai_analysis;
+                          const score = ai?.friction_score;
+                          const scoreColor = score == null ? '#5A6270' : score >= 70 ? '#10B981' : score >= 40 ? '#F59E0B' : '#F87171';
+                          return (
+                            <div key={i} className="bg-[#08090D] border border-[#1E222A] rounded-lg px-3 py-2 text-[12px]">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="text-white font-medium truncate" title={f.page_url}>
+                                  {ai?.form_purpose || `${f.field_count} fields`}
+                                </span>
+                                {score != null && (
+                                  <span className="text-[10px] font-bold shrink-0" style={{ color: scoreColor }}>{score}/100</span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-[#5A6270] truncate" title={f.page_url}>{(() => { try { return new URL(f.page_url).pathname || '/'; } catch { return f.page_url; } })()}</div>
+                              {ai?.top_friction_points?.length > 0 && (
+                                <ul className="text-[10px] text-[#8B95A5] mt-1 space-y-0.5">
+                                  {ai.top_friction_points.slice(0, 2).map((p, j) => <li key={j}>• {p}</li>)}
+                                </ul>
+                              )}
+                              {f.has_inline_labels && (
+                                <div className="text-[10px] text-[#F59E0B] mt-1">⚠ Uses inline labels (CXL friction)</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Pages audited list (compact) */}
+            {report.pages_audited?.length > 1 && (
+              <div className="mt-6 rounded-2xl border border-[#1E222A] bg-[#0E1014] p-4">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-[#8B95A5] mb-2 flex items-center gap-2">
+                  <List size={14} /> Pages Audited ({report.pages_audited.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {report.pages_audited.map((p, i) => (
+                    <span key={i} className="text-[11px] px-2 py-1 rounded-md bg-[#08090D] border border-[#1E222A] text-[#8B95A5] truncate max-w-[280px]" title={p}>
+                      {(() => { try { return new URL(p).pathname || '/'; } catch { return p; } })()}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}

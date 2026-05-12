@@ -3,9 +3,9 @@ type: project
 title: "CRO AI Agent"
 stack: "React/Vite/Gemini"
 status: stable
-version: "v1.7.0"
+version: "v1.8.0"
 asana_gid: null
-updated: 2026-04-22
+updated: 2026-05-12
 ---
 
 # CLAUDE.md — GROWAGENT CRO AI Agent
@@ -14,12 +14,12 @@ updated: 2026-04-22
 
 ## Quick Status
 
-- **Version**: 1.7.0 (March 24, 2026)
+- **Version**: 1.8.0 (May 12, 2026)
 - **Live URL**: https://cro-ai-agent.vercel.app/
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
-- **Build status**: Passing (`npx vite build` verified)
-- **All 5 API endpoints**: Confirmed (analyze, chat, generateCode, generateABTests, learnings)
+- **Build status**: Passing (`npx vite build` verified — 2143 modules, 3.4s)
+- **All 6 API endpoints**: analyze, chat, generateCode, generateABTests, learnings, **discover** (new)
 
 ## What This Project Is
 
@@ -28,6 +28,17 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 **Key differentiator**: The app has a **learning system** — it remembers past audits and chat feedback in localStorage, and feeds that knowledge into future AI prompts so recommendations get smarter over time.
 
 ## Session History
+
+### v1.8.0 (May 12, 2026) — Full-Site Audit, Link/CTA/Form Health, CXL Knowledge
+- Auto page discovery: `/api/discover` endpoint with sitemap.xml + robots.txt + homepage crawl. Up to 25 pages prioritized homepage → contact → pricing → about → services
+- 25-page audits (was 4). Auto/Manual toggle in the UI with discovered-URL chip preview
+- Link health: HEAD-checks every link (concurrency 10, GET-with-Range fallback), surfaces broken URLs per page
+- CTA audit: static rules for empty hrefs, phone CTAs missing `tel:`, generic copy (Submit/Click Here)
+- Form friction analysis: 6th Gemini call applies CXL form-friction rules to extracted form fields
+- CXL knowledge base: `api/_knowledge.js` distills the GrowMe training docs into a 3.5K-char constant, injected into all prompts
+- Per-page AI scoring batched (5 pages/call, parallel) so 25-page audits don't overflow Gemini's response budget
+- Static-findings appendix in recs prompt — concrete broken URLs / CTA mismatches / form flags passed as ground truth
+- New files: `api/_knowledge.js`, `api/_extract.js`, `api/discover.js`. Modified: `api/analyze.js`, `api/chat.js`, `src/App.jsx`, `src/constants/loadingData.js`
 
 ### v1.7.0 (March 24, 2026) — Modularization, Security, Multi-Format Export, Critical Bug Fixes
 - CRITICAL FIX: `additionalPagesArr` TDZ bug crashed the app on every Analyze click
@@ -43,9 +54,9 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 
 **See `TODO.md` for the full prioritized action plan.** The top 3 items are:
 
-1. **Checklist drill-down** — Make checklist category circles clickable to show individual item pass/fail.
-2. **Auto-crawl mode** — Extract internal links from main URL and auto-discover pages to analyze (vs manual entry).
-3. **Component extraction** — Continue modularization: extract React hooks and UI components from App.jsx.
+1. **Checklist drill-down** — Make checklist category circles clickable to show individual item pass/fail (each category has 4-8 underlying checklist items embedded in `api/analyze.js`).
+2. **Component extraction** — Continue modularization. App.jsx is now 2400+ lines after v1.8.0. Extract the new Link Health / CTA Audit / Form Friction cards into `src/components/` and the page-discovery toggle into a hook.
+3. **JS-rendered SPA support** — Static extraction can't see JS-hydrated forms/links. Investigate `@sparticuz/chromium` + `puppeteer-core` for a Phase 2 deep-audit mode (~50MB Vercel slug budget is tight).
 
 ## Architecture
 
@@ -53,7 +64,15 @@ React 18 + Vite 5 frontend (single `App.jsx` ~1800 lines) with Tailwind CSS styl
 
 **Learning system**: Server-side Vercel Redis (`api/learnings.js`) + localStorage fallback. Audits and chat insights saved to both. Merged and deduplicated on load.
 
-**CRO Checklist**: 10 categories, 50+ criteria from the GrowMe Basic Website Standards. Embedded in `api/analyze.js`. Each category scored 0-100 by AI.
+**CRO Checklist**: 10 categories, 50+ criteria from the GrowMe Basic Website Standards. Embedded in `api/analyze.js`. Each category scored 0-100 by AI. This is the ONLY checklist in use (confirmed v1.8.0).
+
+**CXL knowledge base** (v1.8.0+): `api/_knowledge.js` distills CXL Institute training (persuasive design, visual hierarchy, web forms, CTAs, awareness levels, friction taxonomy, Relevance/Trust/Stimulance, fast/slow thinking, copywriting) into a `CXL_PRINCIPLES` constant. Injected into every Gemini prompt alongside the checklist.
+
+**Auto-discovery** (v1.8.0+): `/api/discover` endpoint takes a single URL and returns up to 25 same-origin pages via sitemap.xml → robots.txt → homepage crawl with depth-1 BFS through priority paths. Helpers in `api/_extract.js`.
+
+**Static health audit** (v1.8.0+): `api/_extract.js` extracts links, buttons, forms from raw HTML (preserved alongside sanitized HTML in the scrape phase). HEAD-checks URLs at concurrency 10 with GET-with-Range fallback for 405/403. Surfaces broken links, CTA→outcome mismatches, generic CTA copy, inline-label form anti-patterns.
+
+**Form friction call** (v1.8.0+): 6th Gemini call applies CXL form-friction rules to each extracted form, returning friction score + concrete fixes per form.
 
 **Gemini models**: `gemini-3-flash-preview` for analysis + chat, `gemini-2.5-flash` for code gen + A/B tests. Temperature 0.2/0.3.
 
@@ -63,7 +82,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details including lear
 
 ## Schemas
 
-**Report** (`api/analyze.js` output): `overall_score`, `summary`, `strengths[]`, `quick_wins[]`, `recommendations[]` (id, priority, category, issue, recommendation, expected_impact, implementation, checklist_ref), `competitor_analysis`, `checklist_scores` (10 keys, 0-100), `checklist_flags[]`, `audit_metadata`.
+**Report** (`api/analyze.js` output): `overall_score`, `summary`, `strengths[]`, `quick_wins[]`, `recommendations[]` (id, priority, category, issue, recommendation, expected_impact, implementation, checklist_ref), `competitor_analysis`, `checklist_scores` (10 keys, 0-100), `checklist_flags[]`, `page_scores[]`, **`link_health`** `{ total_links, total_checked, broken_links[], by_page[] }`, **`cta_audit`** `{ total_ctas, issues[] }`, **`form_health`** `{ total_forms, per_form[] }`, **`pages_audited[]`**, `audit_metadata` (now includes `pages_requested`, `pages_scraped`, `urls_health_checked`).
+
+**Discover** (`api/discover.js` output): `{ pages: [...], source: "sitemap"|"crawl"|"mixed", total_found, origin }`.
 
 **Chat** (`api/chat.js` output): `message` (string), `updated_report` (full report or null), `learning_insight` (string or null).
 
@@ -90,12 +111,21 @@ See [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) for resolved issues history and
 ## File Map
 
 ```
-├── api/          # 5 serverless endpoints + shared utils
+├── api/
+│   ├── _utils.js       # validateUrl (SSRF) + rateLimit
+│   ├── _knowledge.js   # CXL_PRINCIPLES (v1.8.0)
+│   ├── _extract.js     # link/button/form/sitemap/HEAD-check helpers (v1.8.0)
+│   ├── analyze.js      # main audit pipeline (Phase 1 → 1.5 → 2 → 3)
+│   ├── chat.js         # follow-up chat
+│   ├── discover.js     # sitemap + homepage crawl (v1.8.0)
+│   ├── generateCode.js # per-rec code patches
+│   ├── generateABTests.js
+│   └── learnings.js    # Redis-backed learning system
 ├── src/
 │   ├── constants/  # BRAND, CHECKLIST_LABELS, loading data
 │   ├── utils/      # clipboard, json, learning, localStorage
 │   ├── utils/export/  # docx, jpeg, txt, xlsx exporters
-│   ├── App.jsx     # Main frontend (~1800 lines)
+│   ├── App.jsx     # Main frontend (~2400 lines after v1.8.0)
 │   └── main.jsx    # React entry point
 ├── docs/         # Reference documentation (architecture, schemas, etc.)
 ├── public/       # Static assets
@@ -190,9 +220,9 @@ After making ANY code change, you MUST update the following files before committ
 
 | Field | Value |
 |-------|-------|
-| **Last session date** | 2026-04-15 |
-| **What was done** | Project state check only. No code changes. Confirmed: staging branch clean, build passing, v1.7.0 stable. |
-| **Next step** | Checklist drill-down (make category circles clickable for item pass/fail), auto-crawl mode (discover internal pages automatically), component extraction (React hooks and UI components from App.jsx). See TODO.md for full plan. |
+| **Last session date** | 2026-05-12 |
+| **What was done** | Shipped v1.8.0 — auto page discovery (`/api/discover`), 25-page audits (was 4), link/CTA/form health audit, form-friction Gemini call (6th AI call), CXL knowledge base (`api/_knowledge.js`) injected into every prompt, per-page scoring batched (5/call), Auto/Manual toggle in UI with discovered-URL chips, new Link Health / CTA Audit / Form Friction cards in the report. Build verified (2143 modules, 3.4s). |
+| **Next step** | Checklist drill-down (clickable category circles for per-item pass/fail), component extraction (App.jsx now 2400+ lines — pull out the new health cards), and Phase 2 SPA support via `@sparticuz/chromium` + `puppeteer-core` for JS-rendered forms/links. See TODO.md for full plan. |
 | **Blockers** | None |
 
 ---

@@ -26,3 +26,8 @@ dist-ssr
 *.pdf
 GrowAgent_*.md
 .vercel
+
+# Internal training material — source for api/_knowledge.js.
+# Contains Zoom recording passcodes; the distilled CXL_PRINCIPLES
+# constant in api/_knowledge.js is the public-facing version.
+CRO Training*.docx

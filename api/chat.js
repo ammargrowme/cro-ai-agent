@@ -1,3 +1,5 @@
+import { CXL_PRINCIPLES } from './_knowledge.js';
+
 // Server-side only — never reference VITE_ vars here, those would leak into client bundle.
 const apiKey = process.env.GEMINI_API_KEY || "";
 
@@ -40,6 +42,11 @@ export default async function handler(req, res) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const fullSystemInstruction = `${systemInstruction}
+
+You also operate inside this research-backed CRO framework — reference it when explaining
+recommendations or when the user pushes back, so answers stay grounded in named principles
+(e.g. "per the CXL friction taxonomy this is cognitive friction, not interaction friction"):
+${CXL_PRINCIPLES}
 
 RESPONSE FORMAT — You MUST return valid JSON with this exact structure:
 {

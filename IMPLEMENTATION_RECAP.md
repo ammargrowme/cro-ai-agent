@@ -4,6 +4,108 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 11: v1.8.0 — May 12, 2026
+
+**Goal**: Lift the 4-page audit cap, add link/CTA/form health auditing, integrate the GrowMe CXL training notes into the agent's reasoning. The user wanted a single-domain audit to discover and score every page, flag broken/misrouted CTAs, score form friction, and ground recommendations in named CXL principles.
+
+### What Was Built
+
+1. **Auto Page Discovery (`api/discover.js`)**
+   - POST endpoint takes a URL, returns up to 25 same-origin pages
+   - Discovery cascade: `/sitemap.xml` → `/sitemap_index.xml` → `Sitemap:` directive in `/robots.txt` → homepage link crawl → depth-1 BFS through `/about`, `/services`, `/contact`, `/pricing`
+   - Resolves nested sitemap-index entries (depth 1)
+   - Filters: same-origin only, no `mailto:`/`tel:`/`javascript:`, no file assets (.pdf, .jpg, etc.)
+   - Prioritization: homepage → /contact → /pricing → /plans → /about → /services → /products → /get-started → /book → /demo → /quote → /sign-up → /free-trial → alphabetical
+   - Returns `{ pages, source: "sitemap"|"crawl"|"mixed", total_found, origin }`
+   - Reuses `validateUrl` (SSRF guard) and `rateLimit` (10/min) from `api/_utils.js`
+
+2. **Static HTML Extraction (`api/_extract.js`)**
+   - `extractLinks(html, baseUrl)` — every `<a>` with normalized href, CTA detection (text + class regex), phone-label detection, external/internal/empty/tel/mailto flags
+   - `extractButtons(html)` — `<button>`, `<input type=submit|button|image>`, `role="button"` with text/onclick/href/generic-CTA detection
+   - `extractForms(html, baseUrl)` — per-form: action, method, fields with kind/type/name/label/placeholder/required/hasInlineLabel/hasValidationPattern/hasAriaLabel
+   - `checkUrls(urls, opts)` — concurrency-limited (default 10) HEAD-checker with GET-with-Range fallback for 405/403/501 and network errors
+   - `parseSitemap(xml)` — handles `<url>`/`<sitemap>` blocks and bare `<loc>` fallback
+   - `prioritizePages(urls, baseUrl)` — orders URLs for the audit
+   - `detectCtaIssues(pageUrl, links, buttons)` — non-AI rules: empty `#`/`javascript:` hrefs on visible CTAs, phone CTAs missing `tel:`, generic copy (Submit/Click Here/Buy Now/Send)
+   - `normalizeUrl(href, baseUrl)` — resolves relative URLs, strips fragments, normalizes trailing slash
+   - Pure regex (no cheerio/jsdom) to keep the Vercel function tiny
+
+3. **CXL Knowledge Base (`api/_knowledge.js`)**
+   - `CXL_PRINCIPLES` constant — ~3.5K-char distillation of the GrowMe training docs (CRO Training.docx, CRO Training Overview.docx, CRO Training Notes_.docx) which reference CXL Institute courses
+   - Sections: Persuasive Design (5 principles), Visual Hierarchy, Home Page, Web Forms friction reduction, CTAs/Buttons, FAQs, Landing Page Structure, Awareness Levels (Schwartz 5), User Friction (3 types), Heuristic Evaluation (Relevance/Trust/Stimulance), Fast vs Slow Thinking (Kahneman), Copywriting principles, Research Methods
+   - Imported by `api/analyze.js` and `api/chat.js`
+
+4. **`api/analyze.js` Pipeline Changes**
+   - Removed `.slice(0, 4)` page cap; introduced `MAX_ADDITIONAL_PAGES = 25` constant
+   - Scrape phase now returns `{ sanitized, raw }` — sanitized HTML for AI prompts, raw HTML preserved for accurate link/button/form extraction (sanitizer strips class/href/style)
+   - NEW Phase 1.5 — runs `extractLinks` / `extractButtons` / `extractForms` on every scraped page, then `checkUrls()` over the unique URL set, builds `brokenLinks`, `allCtaIssues`, `totalForms`, `staticFindings` appendix
+   - Phase 2 AI calls now inject `CXL_PRINCIPLES` alongside `CRO_CHECKLIST` (overview, recs, checklist, per-page, form-friction)
+   - Recs prompt also receives the `staticFindings` block so recommendations cite specific broken URLs and form-field issues by name
+   - Per-page scoring **batched** into groups of 5, run in parallel (Promise.all). Each batch wrapped in try/catch so one failure doesn't kill the whole audit
+   - NEW 6th AI call — `formFrictionPromise` — only runs when forms detected. Serializes per-field metadata and asks Gemini to apply CXL friction rules. Returns `{ forms: [{ page_url, form_purpose, friction_score, top_friction_points, recommendations }] }`
+   - Final report adds: `link_health`, `cta_audit`, `form_health`, `pages_audited`, plus new audit_metadata fields (`pages_requested`, `pages_scraped`, `urls_health_checked`)
+   - New schema: `FORM_FRICTION_SCHEMA`
+
+5. **`api/chat.js` CXL Injection**
+   - Imports `CXL_PRINCIPLES`, prepends it to the system instruction
+   - Chat answers can now reference named CXL principles when pushing back ("per the CXL friction taxonomy this is cognitive friction, not interaction friction")
+
+6. **Frontend (`src/App.jsx`)**
+   - New state: `discoveryMode` ("auto"|"manual"), `discoveredPages` `[{url, selected}]`, `discoverySource`, `discovering`, `discoverError`
+   - New callbacks: `handleDiscover` (POST `/api/discover`), `toggleDiscoveredPage`, `selectAllDiscovered`
+   - `additionalPagesArr` builder now pulls from either auto-discovered chips OR the manual textarea, caps at 25, strips the primary URL
+   - UI: Auto/Manual toggle pill replaces the textarea label. Auto mode shows "Discover pages on this domain" button → discovered URLs render as chip checkboxes with select-all/none + source ("via sitemap" / "via crawl"). Manual mode shows the legacy textarea
+   - New report sections (grid of 3 cards): Link Health, CTA Audit, Form Friction. Plus a "Pages Audited (N)" chip list below them
+   - Loading steps: added a 3rd "Auditing Links, CTAs & Forms" phase between metrics and AI analysis
+   - `handleReset` clears the new discovery state
+
+7. **`src/constants/loadingData.js`**
+   - Updated `STEP_HEADERS` (3rd phase now "Auditing Links, CTAs & Forms")
+   - Added 5 new `LOADING_PHRASES`: discovering pages, HEAD-checking links, verifying CTA outcomes, extracting forms, applying CXL friction taxonomy
+
+### Why This Design
+
+- **Sync, not async** — 25 pages × parallel scrape + 10-concurrency HEAD checks + 6 batched Gemini calls fits comfortably in Vercel's 300s function timeout. Async job queue would have added Redis state, a worker, and polling for marginal benefit at this scale
+- **Static analysis, not headless browser** — Puppeteer/Playwright + Chromium would have blown the 50MB Vercel slug limit unless we used `@sparticuz/chromium`. SPAs are the only loser; documented in CHANGELOG. Real-browser submission of client forms is also legally fraught
+- **Regex extraction, not cheerio** — kept the zero-new-deps invariant. Trade-off is malformed HTML may parse imperfectly; acceptable for an audit tool that's already approximate
+- **Inline knowledge constant, not retrieval** — CXL principles are small (~3.5K), apply to every audit, and easy to update. Retrieval would have added complexity for no benefit
+- **Static-findings appendix** — broken URLs and form flags ride into the recs prompt as ground truth so Gemini cites actual evidence instead of paraphrasing static rules
+
+### What Changed in Which Files
+
+| File | Status | Why |
+|---|---|---|
+| `api/_knowledge.js` | NEW | `CXL_PRINCIPLES` constant |
+| `api/_extract.js` | NEW | Link/button/form/sitemap/HEAD-check helpers |
+| `api/discover.js` | NEW | Sitemap + crawl page discovery |
+| `api/analyze.js` | MODIFIED | Removed 4-page cap, added Phase 1.5, batched per-page, added form-friction call, CXL injection |
+| `api/chat.js` | MODIFIED | CXL injection |
+| `src/App.jsx` | MODIFIED | Auto/Manual toggle, discovered-pages chips, new health cards, new pages-audited list |
+| `src/constants/loadingData.js` | MODIFIED | New step header + 5 new loading phrases |
+| `CHANGELOG.md` | MODIFIED | v1.8.0 section |
+| `TODO.md` | MODIFIED | Moved completed items, updated next-step list |
+| `CLAUDE.md` | MODIFIED | v1.8.0 status, session history, resume point, file map |
+| `IMPLEMENTATION_RECAP.md` | MODIFIED | This Session 11 entry |
+| `DEVELOPER.md` | MODIFIED | New endpoints + extraction pipeline |
+| `README.md` | MODIFIED | v1.8.0 features list |
+| `VISION.md` | MODIFIED | "How It Works Today" + roadmap |
+
+### Verification
+
+- `npx vite build` — 2143 modules, 3.4s, exit 0
+- `node --check api/_knowledge.js api/_extract.js api/discover.js api/analyze.js api/chat.js` — all OK
+- Live smoke tests run separately (vercel dev / staging deploy)
+
+### State at Session End
+
+- Branch: `staging` (not yet committed at recap-write time)
+- Build: green
+- All 6 endpoints present
+- 7 mandatory docs updated
+- Next session priorities: checklist drill-down, App.jsx component extraction, SPA support investigation
+
+---
+
 ## Session 10: v1.7.0 — March 24, 2026
 
 **Goal**: Fix critical bugs preventing the app from working, modularize the codebase, add multi-format exports, and harden API security.
