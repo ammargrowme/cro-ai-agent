@@ -231,7 +231,40 @@ function AppContent() {
     let formattedUrl = url.startsWith('http') ? url : `https://${url}`;
     setUrl(formattedUrl);
     setAppError(null);
-    
+
+    // v1.8.1 — in Auto mode, if the operator hasn't previewed pages yet, run
+    // discovery inline before the audit so a one-click workflow audits the
+    // whole site without forcing them through a separate Discover step.
+    let autoPagesToUse = discoveredPages.filter(p => p.selected).map(p => p.url);
+    if (discoveryMode === "auto" && autoPagesToUse.length === 0) {
+      setStatus("analyzing"); setCurrentStep(0);
+      setAnalysisSteps([{
+        id: 'discover',
+        label: `Discovering pages on ${formattedUrl}...`,
+        icon: <Search size={18} />,
+        detail: 'Trying sitemap.xml, robots.txt, then crawling internal links'
+      }]);
+      try {
+        const dres = await fetch('/api/discover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: formattedUrl })
+        });
+        if (dres.ok) {
+          const ddata = await dres.json();
+          const origin = (() => { try { return new URL(formattedUrl).origin; } catch { return formattedUrl; } })();
+          const pages = (ddata.pages || [])
+            .filter(p => p !== formattedUrl && p !== `${origin}/` && p !== origin)
+            .map(p => ({ url: p, selected: true }));
+          setDiscoveredPages(pages);
+          setDiscoverySource(ddata.source || 'crawl');
+          autoPagesToUse = pages.map(p => p.url);
+        }
+      } catch (_) {
+        // Discovery failure is non-fatal — fall through to a single-page audit.
+      }
+    }
+
     const hasCompetitors = competitorsInput.trim().length > 0;
     const competitorCount = competitorsInput.split(/[,\n]+/).map(s => s.trim()).filter(s => s.length > 0).length;
     const hostname = (() => { try { return new URL(formattedUrl).hostname; } catch { return formattedUrl; } })();
@@ -244,8 +277,7 @@ function AppContent() {
       .map(s => s.trim())
       .filter(s => s.length > 0)
       .map(p => p.startsWith('http') ? p : `https://${p}`);
-    const autoPages = discoveredPages.filter(p => p.selected).map(p => p.url);
-    const additionalPagesArr = (discoveryMode === "auto" ? autoPages : manualPages)
+    const additionalPagesArr = (discoveryMode === "auto" ? autoPagesToUse : manualPages)
       .filter(p => p !== formattedUrl && p !== `${formattedUrl}/`)
       .slice(0, 25);
     const hasPages = additionalPagesArr.length > 0;
@@ -1397,6 +1429,91 @@ Your job:
                 </button>
               </div>
 
+              {/* v1.8.1 — accessible audit-mode row, hoisted out of Advanced.
+                 Auto is the default. In Auto mode, clicking Analyze runs
+                 discovery + audit in one step. */}
+              <div className="flex flex-wrap items-center gap-3 text-[12px]">
+                <div className="inline-flex rounded-lg overflow-hidden border border-[#1E222A] text-[11px] font-semibold uppercase tracking-wider">
+                  <button
+                    type="button"
+                    onClick={() => setDiscoveryMode("auto")}
+                    className={`px-3 py-1.5 transition-colors flex items-center gap-1.5 ${discoveryMode === "auto" ? "bg-[#F25430] text-white" : "bg-[#08090D] text-[#5A6270] hover:text-[#8B95A5]"}`}
+                  >
+                    <Search size={11} /> Auto-audit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscoveryMode("manual")}
+                    className={`px-3 py-1.5 transition-colors flex items-center gap-1.5 ${discoveryMode === "manual" ? "bg-[#F25430] text-white" : "bg-[#08090D] text-[#5A6270] hover:text-[#8B95A5]"}`}
+                  >
+                    <List size={11} /> Manual pages
+                  </button>
+                </div>
+
+                {discoveryMode === "auto" && (
+                  <>
+                    <span className="text-[#5A6270]">
+                      {discoveredPages.length === 0
+                        ? "Auto-discovers up to 25 pages on click — or preview them first"
+                        : `${discoveredPages.filter(p => p.selected).length} of ${discoveredPages.length} pages selected${discoverySource ? ` · via ${discoverySource}` : ''}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleDiscover}
+                      disabled={!url || discovering}
+                      className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#1E222A] hover:border-[#F25430]/40 text-[#8B95A5] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {discovering ? <Loader2 size={11} className="animate-spin" /> : <Eye size={11} />}
+                      {discovering ? "Discovering…" : (discoveredPages.length > 0 ? "Re-preview" : "Preview pages")}
+                    </button>
+                  </>
+                )}
+
+                {discoveryMode === "manual" && (
+                  <span className="text-[#5A6270]">Add specific URLs below (one per line)</span>
+                )}
+              </div>
+
+              {discoverError && (
+                <div className="text-[11px] text-red-400">{discoverError}</div>
+              )}
+
+              {/* Discovered-pages chip preview (Auto mode) */}
+              {discoveryMode === "auto" && discoveredPages.length > 0 && (
+                <div className="bg-[#08090D] border border-[#1E222A] rounded-xl p-3 space-y-2 max-h-44 overflow-y-auto text-left">
+                  <div className="flex items-center justify-between text-[10px] text-[#5A6270]">
+                    <span>Click a chip to exclude it from the audit:</span>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => selectAllDiscovered(true)} className="text-[#8B95A5] hover:text-white">All</button>
+                      <button type="button" onClick={() => selectAllDiscovered(false)} className="text-[#8B95A5] hover:text-white">None</button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {discoveredPages.map(p => (
+                      <button
+                        type="button"
+                        key={p.url}
+                        onClick={() => toggleDiscoveredPage(p.url)}
+                        className={`text-[11px] px-2 py-1 rounded-md border transition-colors truncate max-w-[280px] ${p.selected ? "bg-[#F25430]/10 border-[#F25430]/40 text-white" : "bg-[#08090D] border-[#1E222A] text-[#5A6270] hover:text-[#8B95A5]"}`}
+                        title={p.url}
+                      >
+                        {(() => { try { return new URL(p.url).pathname || '/'; } catch { return p.url; } })()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Manual-mode textarea, hoisted out of Advanced */}
+              {discoveryMode === "manual" && (
+                <textarea
+                  value={additionalPagesInput}
+                  onChange={(e) => setAdditionalPagesInput(e.target.value)}
+                  placeholder="example.com/pricing&#10;example.com/about&#10;example.com/contact"
+                  className="w-full bg-[#08090D] border border-[#1E222A] rounded-xl p-4 text-white text-[14px] focus:outline-none focus:border-[#F25430]/40 focus:ring-1 focus:ring-[#F25430]/20 transition-all resize-none h-24 placeholder:text-[#3A4050] text-left"
+                />
+              )}
+
               {showAdvanced && (
                 <div className="animate-in fade-in slide-in-from-top-4 duration-500 glass-card rounded-2xl p-7 shadow-2xl mt-4 relative overflow-hidden text-left">
                   <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
@@ -1447,76 +1564,12 @@ Your job:
                       <div className="text-[10px] text-[#5A6270]">Comma-separated. Used for SEO alignment scoring.</div>
                     </div>
 
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[#8B95A5] text-xs font-semibold uppercase tracking-wider flex items-center gap-2">
-                          <LayoutGrid size={14} /> Batch Pages <span className="text-[10px] font-normal text-[#5A6270] lowercase tracking-normal ml-1">(up to 25, same site)</span>
-                        </label>
-                        <div className="inline-flex rounded-lg overflow-hidden border border-[#1E222A] text-[10px] font-semibold uppercase tracking-wider">
-                          <button
-                            type="button"
-                            onClick={() => setDiscoveryMode("auto")}
-                            className={`px-2.5 py-1 transition-colors ${discoveryMode === "auto" ? "bg-[#F25430] text-white" : "bg-[#08090D] text-[#5A6270] hover:text-[#8B95A5]"}`}
-                          >Auto</button>
-                          <button
-                            type="button"
-                            onClick={() => setDiscoveryMode("manual")}
-                            className={`px-2.5 py-1 transition-colors ${discoveryMode === "manual" ? "bg-[#F25430] text-white" : "bg-[#08090D] text-[#5A6270] hover:text-[#8B95A5]"}`}
-                          >Manual</button>
-                        </div>
-                      </div>
+                    {/* v1.8.1 — Batch Pages controls were hoisted out of
+                        Advanced into the accessible toggle row right under
+                        the URL input. Operator no longer has to expand
+                        Advanced to choose Auto vs Manual or preview the
+                        page list. */}
 
-                      {discoveryMode === "auto" ? (
-                        <div className="space-y-2">
-                          <button
-                            type="button"
-                            onClick={handleDiscover}
-                            disabled={!url || discovering}
-                            className="w-full flex items-center justify-center gap-2 bg-[#08090D] border border-[#1E222A] hover:border-[#F25430]/40 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl px-4 py-3 text-white text-[13px] font-semibold transition-all"
-                          >
-                            {discovering ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                            {discovering ? "Discovering pages…" : (discoveredPages.length > 0 ? "Re-discover pages" : "Discover pages on this domain")}
-                          </button>
-                          {discoverError && (
-                            <div className="text-[11px] text-red-400">{discoverError}</div>
-                          )}
-                          {discoveredPages.length > 0 && (
-                            <div className="bg-[#08090D] border border-[#1E222A] rounded-xl p-3 space-y-2 max-h-56 overflow-y-auto">
-                              <div className="flex items-center justify-between text-[10px] text-[#5A6270]">
-                                <span>
-                                  {discoveredPages.filter(p => p.selected).length} of {discoveredPages.length} selected
-                                  {discoverySource && <> · via {discoverySource}</>}
-                                </span>
-                                <div className="flex gap-2">
-                                  <button type="button" onClick={() => selectAllDiscovered(true)} className="text-[#8B95A5] hover:text-white">All</button>
-                                  <button type="button" onClick={() => selectAllDiscovered(false)} className="text-[#8B95A5] hover:text-white">None</button>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap gap-1.5">
-                                {discoveredPages.map(p => (
-                                  <button
-                                    type="button"
-                                    key={p.url}
-                                    onClick={() => toggleDiscoveredPage(p.url)}
-                                    className={`text-[11px] px-2 py-1 rounded-md border transition-colors truncate max-w-[280px] ${p.selected ? "bg-[#F25430]/10 border-[#F25430]/40 text-white" : "bg-[#08090D] border-[#1E222A] text-[#5A6270] hover:text-[#8B95A5]"}`}
-                                    title={p.url}
-                                  >
-                                    {(() => { try { return new URL(p.url).pathname || '/'; } catch { return p.url; } })()}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <textarea
-                          value={additionalPagesInput}
-                          onChange={(e) => setAdditionalPagesInput(e.target.value)}
-                          placeholder="E.g., example.com/pricing&#10;example.com/about&#10;example.com/contact"
-                          className="w-full bg-[#08090D] border border-[#1E222A] rounded-xl p-4 text-white text-[15px] focus:outline-none focus:border-[#F25430]/40 focus:ring-1 focus:ring-[#F25430]/20 transition-all resize-none h-20 placeholder:text-[#3A4050]"
-                        />
-                      )}
-                    </div>
 
                     {/* Row 3: API Key */}
                     <div className="md:col-span-2 pt-5 border-t border-[#1E222A]">
