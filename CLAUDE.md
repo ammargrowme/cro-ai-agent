@@ -29,6 +29,11 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 
 ## Session History
 
+### v1.8.1 (May 12, 2026) — UI Cleanup + CTA Audit False-Positive Fixes
+- UI cleanup (commit `f8e947f`): Auto/Manual toggle, page-preview chips, and Manual textarea hoisted out of Advanced into a slim accessible row directly under the URL input. Auto-audit is the visible default (orange pill highlighted on load).
+- One-click audit in Auto mode: `handleAnalyze` now runs `/api/discover` inline before the audit, with a "Discovering pages on X..." loading step. Eliminates the previous "click +, click Discover, wait, click Analyze" three-step flow.
+- Advanced panel slimmed — kept only Campaign Context, Competitor Domains, Target Keywords, Custom PageSpeed Key.
+
 ### v1.8.1 (May 12, 2026) — CTA Audit False-Positive Fixes
 - Live tested v1.8.0 against growmemarketing.ca → 84 CTA "issues" reported, almost all false positives. Three root causes:
   - Dropdown nav triggers with `<a href="#">` (Elementor, Webflow, WordPress nav menus)
@@ -234,9 +239,9 @@ After making ANY code change, you MUST update the following files before committ
 | Field | Value |
 |-------|-------|
 | **Last session date** | 2026-05-12 |
-| **What was done** | Shipped v1.8.0 (full-site audit, link/CTA/form health, CXL knowledge — see Session History) then v1.8.1 fixing CTA audit false positives discovered during live testing on growmemarketing.ca. Three root causes addressed: dropdown nav triggers (now suppressed via aria/data-toggle/role detection + structural `<nav>`/widget-container scan), Cloudflare `/cdn-cgi/*` URLs (now excluded from HEAD checks), and per-page CTA-issue duplication (now deduped with × N pages rollup). Verified 11/11 false positives suppressed on growmemarketing.ca, genuine broken CTAs in main/body/footer still flag. Three old Gemini keys neutralized: initial-commit git-history key rotated, GROWAGENTKEY project deleted, prior hub key already rotated. Live bundle confirmed key-free. |
-| **Next step** | Checklist drill-down (clickable category circles for per-item pass/fail), component extraction (App.jsx now 2400+ lines — pull out the new health cards), and Phase 2 SPA support via `@sparticuz/chromium` + `puppeteer-core` for JS-rendered forms/links. See TODO.md for full plan. |
-| **Blockers** | None |
+| **What was done** | Shipped v1.8.0 (full-site audit, link/CTA/form health, CXL knowledge), then v1.8.1 fixing CTA-audit false positives + UI cleanup hoisting the Auto/Manual toggle out of Advanced into an accessible row under the URL input. One-click Auto-audit flow added (discovery runs inline on Analyze click). Three Gemini keys neutralized. Live bundle confirmed key-free. **Parked decision: "unlimited / deep audit mode" past the 25-page cap** — three options laid out (raise cap to 100 / chunked sync / async job queue), awaiting Abas's decision via Slack DM (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
+| **Next step** | Wait on Abas's call for the unlimited-mode option. In parallel, available work: checklist drill-down (clickable category circles for per-item pass/fail), component extraction (App.jsx 2400+ lines — pull out the new health cards), Phase 2 SPA support via `@sparticuz/chromium` + `puppeteer-core`. See TODO.md DECISION PENDING section. |
+| **Blockers** | Awaiting Abas decision on unlimited-mode architecture (option 1, 2, or 3). |
 
 ---
 

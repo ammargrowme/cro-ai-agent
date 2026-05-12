@@ -4,6 +4,42 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 13: UI cleanup + unlimited-mode decision parked — May 12, 2026
+
+**Goal**: Make the input workflow less cumbersome (Auto/Manual toggle buried in Advanced, three-step flow to start an audit), make Auto the obvious default, and scope an "unlimited" audit mode for larger sites.
+
+### What Was Built
+
+1. **UI cleanup (commit `f8e947f`)** — `src/App.jsx`
+   - New accessible toggle row directly under the URL input: Auto-audit | Manual pages pill (Auto highlighted by default), inline help text, Preview pages button (Auto mode only), discovered-page chip preview
+   - Manual-mode textarea also hoisted into the same row — no longer requires expanding Advanced
+   - `handleAnalyze` runs `/api/discover` inline in Auto mode when the operator hasn't previewed first. New "Discovering pages on X..." loading step. Discovery failure is non-fatal — falls through to single-page audit
+   - Duplicate Batch Pages section removed from inside the Advanced panel
+   - Advanced panel slimmed to Campaign Context, Competitor Domains, Target Keywords, Custom PageSpeed Key
+
+2. **Unlimited-mode decision parked** — laid out three options for raising the 25-page cap on larger sites:
+   - **Option 1**: raise cap to 100, same sync architecture, "Standard 25 / Deep 100" UI picker. Covers ~95% of real client sites. Ship: ~30 min.
+   - **Option 2**: chunked sync orchestration — frontend splits sitemap into 25-page chunks, sequential `/api/analyze` calls, client-side merge. Truly unlimited but tab must stay open. Ship: ~2-3 hours.
+   - **Option 3**: async job queue (Inngest / QStash / Trigger.dev) — robust but new dep + monthly infra cost. Ship: multi-day.
+   - Slack DM sent to Abas (channel `D09PFS0M3AR`, parent ts `1777334772.765899`) asking which path he wants.
+   - Full context written into `TODO.md` under DECISION PENDING.
+
+### Verification
+
+- Browser preview confirmed: default state shows Auto-audit pill active in orange, Manual toggle swaps in textarea + hides Preview button, Auto round-trip restores Preview button + hides textarea, Advanced panel still functions for the kept fields
+- Build: `npx vite build` exit 0, 2143 modules
+- Vercel deployment `f8e947f` rolled to READY in production
+
+### State at Session End
+
+- Branch: `main`
+- Build: green
+- Latest commit: `f8e947f` (UI cleanup live)
+- Open: unlimited-mode decision awaits Abas response in Slack thread
+- Next available work (parallel to the decision): checklist drill-down, component extraction, SPA support
+
+---
+
 ## Session 12: v1.8.1 — May 12, 2026 (same-day patch)
 
 **Goal**: Fix CTA-audit false positives discovered when the user ran v1.8.0 live against growmemarketing.ca — 84 reported issues, almost all noise. Also do a security audit for leaked Gemini keys.

@@ -10,11 +10,42 @@
 
 ## YOUR FIRST TASK (Start Here)
 
-**v1.8.1 is shipped.** Auto-discovery, link/CTA/form audit, CXL knowledge, plus the false-positive fix sweep are live. Pick the next priority:
+**v1.8.1 is shipped + UI cleanup landed (commit `f8e947f`).** Auto-discovery, link/CTA/form audit, CXL knowledge, false-positive fix sweep, and the hoisted Auto/Manual toggle are all live. Pick the next priority:
 
 1. **Checklist Drill-Down** — Make the 10 checklist circles clickable to expand into per-item pass/fail (each category has 4-8 underlying checklist items already in `api/analyze.js`). Carry CXL principle references into the drill-down view
 2. **Component Extraction** — Continue modularization. `App.jsx` is now 2400+ lines. Pull out: `<LinkHealthCard>`, `<CtaAuditCard>`, `<FormFrictionCard>`, `<PagesAuditedList>` (already self-contained sub-trees), plus the page-discovery toggle into a `<PageSourcePicker>` hook
 3. **JS-rendered SPA support (deferred from v1.8.0)** — Static extraction can't see forms/links rendered by JS frameworks (Next.js after hydration, React SPAs). Investigate `@sparticuz/chromium` + `puppeteer-core` on Vercel for a Phase 2 "deep audit" mode. ~50MB unzipped budget is tight; may need a separate `/api/deep-audit` function
+
+---
+
+## DECISION PENDING — Unlimited / Deep audit mode
+
+**Status**: parked 2026-05-12, awaiting Abas decision. Slack DM sent.
+
+**Context**: User asked for an "unlimited" audit mode that scrapes more than the current 25-page cap on large sites. Vercel serverless functions have a hard 300s timeout; each additional page adds ~2-4s. Math:
+- ~50 pages → 150-200s (fits)
+- ~100 pages → ~250s (fits, tight)
+- 200+ pages → blows the timeout, needs architectural change
+
+**Three options to choose between**:
+
+| Option | Cap | Architecture | Wait time | Cost / audit | Ship time |
+|---|---|---|---|---|---|
+| **1. Raise to 100** (recommended) | 100 pages | Same sync, just bump `MAX_ADDITIONAL_PAGES`. Add "Standard 25 / Deep 100" picker in UI | ~3-5 min | ~$0.07 | ~30 min |
+| **2. Chunked sync orchestration** | Truly unlimited | Frontend splits sitemap into 25-page chunks, sequential `/api/analyze` calls, client-side result merge with progress UI. Browser tab must stay open. | ~15 min for 500 pages | ~$0.36 for 500 | ~2-3 hours |
+| **3. Async job queue** | Truly unlimited, robust | New `/api/audit-job` POST returns jobId, background worker (Inngest / QStash / Trigger.dev — new dep + ~$20-100/mo). Polling + email/notification on completion. | Background | infra cost extra | Multi-day |
+
+**Recommendation**: Option 1 covers ~95% of real-world client sites (most marketing sites are 30-100 pages). Layer Option 2 later only if 200+ page audits become a regular need. Option 3 only if running 50+ audits/day in parallel.
+
+**Implementation sketch for Option 1** (when approved):
+- Add `MAX_ADDITIONAL_PAGES_DEEP = 100` constant in `api/analyze.js`
+- Add `auditDepth` ("standard"|"deep") param to `/api/analyze`
+- New UI control in the hoisted toggle row: "Standard 25 / Deep 100" radio
+- Update server cap to use `auditDepth === 'deep' ? 100 : 25`
+- Update loading copy to reflect longer timing
+- Update CHANGELOG / CLAUDE / docs
+
+**Where this thread lives in Slack**: DM with Abas, channel `D09PFS0M3AR`, parent ts `1777334772.765899` (Slack URL: https://growmemarketing.slack.com/archives/D09PFS0M3AR/p1777334772765899).
 
 ---
 

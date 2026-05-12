@@ -4,6 +4,11 @@ All notable changes to the GROWAGENT project will be documented in this file.
 
 ## [1.8.1] - 2026-05-12
 
+### Changed
+- **UI cleanup — Auto/Manual toggle hoisted out of Advanced** (commit `f8e947f`). The page-source toggle, page-preview chips, and Manual textarea now live in a slim accessible row directly under the URL input. Advanced panel kept only for the less-frequent fields (Campaign Context, Competitor Domains, Target Keywords, Custom PageSpeed Key).
+- **One-click audit in Auto mode** — `handleAnalyze` now runs `/api/discover` inline when the operator hasn't previewed pages first. Click Analyze → discovery + audit completes in one flow with a "Discovering pages on X..." loading step. Discovery failure is non-fatal (falls through to single-page audit).
+- **Auto-audit is the visible default** — the toggle pill shows Auto highlighted in orange on page load. Reflects what was already in state (`useState("auto")`) but now visually obvious instead of buried.
+
 ### Fixed
 - **CTA Audit false-positive flood (3 root causes)** — initial v1.8.0 release flagged nav-menu dropdown triggers, Cloudflare email-protection URLs, and per-page repeats as "broken CTAs". Live audit on growmemarketing.ca went from 84 issues → 0 false positives.
   - **Dropdown nav triggers** — `<a href="#">` with `aria-haspopup` / `aria-expanded` / `aria-controls` / `role="menuitem|button"` / `data-toggle` / `data-bs-toggle` / dropdown class names are now treated as JS-handled, not broken.
