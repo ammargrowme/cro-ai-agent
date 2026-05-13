@@ -3,8 +3,14 @@ type: project
 title: "CRO AI Agent"
 stack: "React/Vite/Gemini"
 status: stable
-version: "v1.8.0"
-asana_gid: null
+version: "v1.8.1"
+asana_gid: "1214758226073235"
+asana_canonical_comment_gid: "1214758294364623"
+asana_url: "https://app.asana.com/1/93326763080426/project/979744792423226/task/1214758226073235"
+asana_predecessors:
+  - "1213247116207786"  # Build a CRO AI AGENT (closed 2026-03-15)
+  - "1213655562211572"  # Improve CRO AI Agent (closed 2026-03-24)
+  - "1213900425643638"  # CRO AI Agent (closed 2026-04-24)
 updated: 2026-05-12
 ---
 
