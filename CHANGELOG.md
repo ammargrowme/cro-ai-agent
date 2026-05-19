@@ -2,6 +2,50 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.8.3] - 2026-05-19 — Exhaustive key-leak + abuse-vector hardening
+
+Follow-up deep audit after the 1.8.2 verification: reviewed EVERY key-exposure
+path and EVERY abuse vector across all 6 API endpoints. Commit `0498b4d`.
+
+### Fixed (SECURITY — key leak)
+- **PageSpeed no longer falls back to the Gemini key.** `api/analyze.js` had
+  `psKey = customPageSpeedKey || apiKey` — sending the Gemini key to
+  `www.googleapis.com/pagespeedonline` (a DIFFERENT Google API). With the new
+  `generativelanguage`-restricted key this 403'd every keyless audit AND placed
+  the key in a non-Gemini googleapis URL (leak-adjacent). Now: operator's
+  PageSpeed key if supplied, else keyless PageSpeed (audit already degrades
+  gracefully to HTML-only).
+- **Catch-all 500s no longer echo `err.message`.** `analyze`/`chat`/
+  `generateCode`/`generateABTests` returned `err.message` to the client in the
+  outer catch. A `fetch()` failure to the key-bearing Gemini URL can surface
+  that URL (with the key) in the message. Now logged server-side, generic
+  message to client. (`cca4b87` closed the `!response.ok` path; this closes the
+  catch-all path — the invariant is now airtight.)
+
+### Fixed (SECURITY — abuse)
+- **Rate limiting on ALL endpoints.** Was only on `analyze` (5/min) and
+  `discover` (10/min). `chat`/`generateCode`/`generateABTests` called Gemini on
+  our key with NO limit — the exact unbounded-credential-abuse that got the
+  shared hub suspended. Added: `chat` 15/min, `generateCode` 10/min,
+  `generateABTests` 10/min, `learnings` 30/min.
+- **SSRF closed.** `analyze.js` Phase 1.5 fetched every extracted `<a href>`
+  via `checkUrls()` with only a scheme filter — a user's own valid site could
+  link to `169.254.169.254` / `10.x` / `localhost` and our server would fetch
+  them (blind SSRF). Every extracted link now passes `validateUrl()` before the
+  health check.
+- **chat.js token-bomb cap.** Added a 200 000-char total-history limit (50
+  messages × unbounded text was a cost-amplification vector).
+- **learnings DELETE fail-closed.** Was `req.headers['x-admin-token'] !==
+  process.env.ADMIN_TOKEN` — if `ADMIN_TOKEN` is unset, `undefined !==
+  undefined` is false → auth BYPASSED. Now requires `ADMIN_TOKEN` configured
+  AND a non-empty exact-match token.
+
+### Verified clean (no change needed)
+- Key-bearing fetch URLs (`geminiUrl`/`endpoint`) never logged or returned.
+- No sourcemaps in the production build.
+- `learnings`/`discover` error responses already generic (no key, no Redis URL).
+- `discover` crawl SSRF bounded (same-origin `isCrawlableUrl` + validated seed).
+
 ## [1.8.2] - 2026-05-19 — Post-incident security hardening + key migration
 
 ### Context
