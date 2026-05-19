@@ -441,7 +441,14 @@ export default async function handler(req, res) {
       }
     })();
 
-    const psKey = customPageSpeedKey || apiKey;
+    // SECURITY: never fall back to the Gemini key for PageSpeed. PageSpeed is a
+    // DIFFERENT Google API (www.googleapis.com/pagespeedonline) and the Gemini
+    // key is API-target-restricted to generativelanguage only — using it here
+    // both 403s AND places the Gemini key into a non-Gemini googleapis URL
+    // (leak-adjacent). Use the operator's own PageSpeed key if supplied;
+    // otherwise call PageSpeed keyless (works at a lower quota — the audit
+    // already degrades gracefully to HTML-only if PageSpeed is unavailable).
+    const psKey = customPageSpeedKey || '';
     const psUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance${psKey ? `&key=${psKey}` : ''}`;
 
     const pageSpeedPromise = (async () => {
@@ -547,11 +554,17 @@ export default async function handler(req, res) {
     // JS-hydrated shims (Cloudflare email-protection etc.) that always 404
     // when fetched server-side and would generate false "broken link"
     // reports.
+    // SECURITY (SSRF): the scraped target page can contain links to ANY host,
+    // including internal/metadata IPs (169.254.169.254, 10.x, localhost, etc.).
+    // We must NOT blindly fetch extracted links — run every one through the
+    // same validateUrl() SSRF guard used on user-supplied inputs before the
+    // health check fetches them.
     const allUrlsToCheck = [...new Set(
       extractedPerPage
         .flatMap(p => p.links)
         .filter(l => l.href && /^https?:/i.test(l.href) && !l.isEmpty)
         .filter(l => !shouldSkipHealthCheck(l.href))
+        .filter(l => validateUrl(l.href).valid)
         .map(l => l.href)
     )];
 
@@ -1035,6 +1048,9 @@ Be concrete — reference the actual fields by name. Avoid generic advice.`;
 
   } catch (err) {
     console.error(`[${logId}] [FATAL] ${err.message} (${Date.now() - globalStart}ms elapsed)`);
-    return res.status(500).json({ error: err.message });
+    // SECURITY: never echo err.message to the client — a fetch() failure to a
+    // key-bearing URL can surface that URL (with the key) in the message.
+    // Log server-side, return a generic message.
+    return res.status(500).json({ error: 'Audit failed. Please retry.' });
   }
 }

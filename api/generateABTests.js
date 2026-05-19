@@ -1,9 +1,16 @@
 
+import { rateLimit } from './_utils.js';
+
 // Server-side only — never reference VITE_ vars here, those would leak into client bundle.
 const apiKey = process.env.GEMINI_API_KEY || "";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+
+  // ABUSE GUARD: this calls Gemini on our key — rate-limit per IP.
+  if (!rateLimit(req, 10)) {
+    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
+  }
 
   const { prompt } = req.body;
 
@@ -61,6 +68,7 @@ export default async function handler(req, res) {
     }
   } catch (err) {
     console.error("[AB TEST ERROR]", err);
-    return res.status(500).json({ error: err.message });
+    // SECURITY: never echo err.message — could surface the key-bearing URL.
+    return res.status(500).json({ error: 'A/B test generation error. Please retry.' });
   }
 }

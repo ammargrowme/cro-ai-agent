@@ -1,4 +1,5 @@
 import { createClient } from 'redis';
+import { rateLimit } from './_utils.js';
 
 // ─── REDIS CONNECTION ──────────────────────────────────────
 // Vercel Redis auto-injects REDIS_URL env var when the store is linked.
@@ -31,6 +32,13 @@ const validateInsightData = (data) => {
 
 // ─── HANDLER ──────────────────────────────────────────────
 export default async function handler(req, res) {
+  // ABUSE GUARD: shared Redis store injected into every audit's AI prompt.
+  // Unbounded writes = data-poisoning / prompt-injection of the global
+  // knowledge base + Redis op cost. 30/min/IP covers normal frontend polling.
+  if (!rateLimit(req, 30)) {
+    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
+  }
+
   let redis;
   try {
     redis = await getRedis();
@@ -61,7 +69,12 @@ export default async function handler(req, res) {
 
     // ── DELETE: Clear all learnings (admin use, token-protected) ──
     if (req.method === 'DELETE') {
-      if (req.headers['x-admin-token'] !== process.env.ADMIN_TOKEN) {
+      // SECURITY: fail closed. If ADMIN_TOKEN is unset, the old check did
+      // `undefined !== undefined` → false → auth BYPASSED. Require the env to
+      // be configured AND a non-empty provided token that matches exactly.
+      const adminToken = process.env.ADMIN_TOKEN;
+      const provided = req.headers['x-admin-token'];
+      if (!adminToken || typeof provided !== 'string' || provided.length === 0 || provided !== adminToken) {
         return res.status(403).json({ error: 'Unauthorized' });
       }
       await redis.del(LEARNINGS_KEY);

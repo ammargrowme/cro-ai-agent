@@ -1,10 +1,18 @@
 import { CXL_PRINCIPLES } from './_knowledge.js';
+import { rateLimit } from './_utils.js';
 
 // Server-side only — never reference VITE_ vars here, those would leak into client bundle.
 const apiKey = process.env.GEMINI_API_KEY || "";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+
+  // ABUSE GUARD: chat calls Gemini on our key. Without a limit anyone can run
+  // unbounded inference on our credential (the exact abuse that got the shared
+  // hub suspended). 15/min/IP is generous for interactive chat.
+  if (!rateLimit(req, 15)) {
+    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
+  }
 
   const { history, systemInstruction } = req.body;
 
@@ -20,6 +28,19 @@ export default async function handler(req, res) {
   }
   if (systemInstruction.length > 50000) {
     return res.status(400).json({ error: 'System instruction too long (max 50000 chars)' });
+  }
+  // ABUSE GUARD: cap total history payload size. Without this, 50 messages ×
+  // unbounded text is a token-bomb / cost-amplification vector against our key.
+  let totalHistoryChars = 0;
+  for (const entry of history) {
+    if (entry && Array.isArray(entry.parts)) {
+      for (const p of entry.parts) {
+        if (p && typeof p.text === 'string') totalHistoryChars += p.text.length;
+      }
+    }
+  }
+  if (totalHistoryChars > 200000) {
+    return res.status(400).json({ error: 'Chat history payload too large (max 200000 chars total)' });
   }
 
   // Validate each history entry has valid role and parts
@@ -229,6 +250,8 @@ RULES:
     return res.status(200).json(parsed);
   } catch (err) {
     console.error("[CHAT ERROR]", err);
-    return res.status(500).json({ error: err.message });
+    // SECURITY: never echo err.message — a fetch() failure to the key-bearing
+    // Gemini endpoint can surface that URL (with the key) in the message.
+    return res.status(500).json({ error: 'Chat service error. Please retry.' });
   }
 }
