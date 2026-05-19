@@ -2,6 +2,58 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.9.0] - 2026-05-19 — Cloudflare Access gate (Google SSO, @growme.ca only) + in-app Sign out
+
+CRO AI Agent is now gated behind Cloudflare Access at the edge: every request
+to `https://cro.growmeapps.io/` (including all `/api/*` endpoints) requires a
+signed-in `@growme.ca` Google account before any Vercel function or static
+asset is served. Same recipe just landed on the GrowME Developer Hub.
+
+### Added
+- **Cloudflare Access app** `fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83`
+  ("GrowME CRO AI Agent") on `cro.growmeapps.io`, session 168h, single Google
+  IdP (`e74686ab-…` *Google (GrowME Workspace)*),
+  `auto_redirect_to_identity=false` so visitors land on a branded GrowME
+  sign-in screen with a "Sign in with Google" button instead of being
+  instant-bounced to Google.
+- **Allow policy** `bbae3fad-a570-4ad9-b758-4d7fac7dd10a` (allow,
+  precedence 1) — `include: [{email_domain: {domain: "growme.ca"}}]`. Any
+  `@growme.ca` Workspace identity is admitted; everyone else is denied at the
+  edge. Defence-in-depth on top of the Google Internal-consent restriction.
+- **In-app Sign out** — header anchor next to the GROWAGENT logo, links to
+  `/cdn-cgi/access/logout`. Cloudflare serves that endpoint on any
+  Access-protected host and clears the `CF_Authorization` session cookie. No
+  serverless code, no secret. Uses the lucide `LogOut` icon.
+
+### Changed
+- **Org `login_design.header_text`** neutralized: `"GrowME Developer Hub"` →
+  `"GrowME"`; footer → `"GrowME team access only — questions? ammar@growme.ca"`.
+  Org-wide setting; the Dev Hub login screen now also reads correctly. Brand
+  colors (navy `#1a1f2e` bg / white text) preserved.
+
+### Verified live (post-cutover)
+- API round-trip: GET app → `auto_redirect_to_identity=false`,
+  `allowed_idps=[Google]`, policy `include` has the `email_domain` rule.
+- Unauth `GET https://cro.growmeapps.io/` → **HTTP 302** with `Location` host
+  `growme.cloudflareaccess.com` (the gate enforces — not a public 200, not a
+  Vercel 401).
+- Unauth `POST /api/chat` → also 302 to the gate (no API bypass).
+- `GET /cdn-cgi/access/logout` → HTTP 200 (logout endpoint live).
+- Build: `npx vite build` exit 0; `cdn-cgi/access/logout` + "Sign out" strings
+  present in the produced `dist/assets/index-*.js` bundle.
+
+### Rollback (instant) if Google ever breaks for CRO
+PUT app `allowed_idps: []` → built-in one-time-PIN IdP returns automatically
+(account-level break-glass, already provisioned).
+
+### Reference data captured
+- Cloudflare account: `d47686239be0b47a3cbf227c7a86d250`; zone
+  `growmeapps.io` `f9f0e86fd0193428764e009bb1c9bac9`; ZT org
+  `growme.cloudflareaccess.com`.
+- Dev Hub Access app (sibling reference, do **not** modify):
+  `11f33d8c-d9cf-474d-8a55-9ae9eae5e2df` (uses a 5-email allowlist instead of
+  the domain rule).
+
 ## [1.8.3] - 2026-05-19 — Exhaustive key-leak + abuse-vector hardening
 
 Follow-up deep audit after the 1.8.2 verification: reviewed EVERY key-exposure

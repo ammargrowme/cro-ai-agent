@@ -8,7 +8,7 @@ import {
   Send, User, Bot, BarChart3, Printer, Download, Lightbulb, LayoutGrid, List,
   BarChart, Plus, Minus, Swords, Target, BrainCircuit, Settings2, Crosshair,
   Award, Filter, Play, XCircle, Terminal, Key, BookOpen, Brain, ClipboardCheck,
-  FileText, FileSpreadsheet, FileType2
+  FileText, FileSpreadsheet, FileType2, LogOut
 } from "lucide-react";
 
 // ─── Modular imports (extracted from monolith for maintainability) ───
@@ -1348,6 +1348,17 @@ Your job:
               <RefreshCw size={15} /> <span className="hidden sm:inline">New Scan</span>
             </button>
           )}
+          {/* Cloudflare Access sign-out — hits /cdn-cgi/access/logout (served by CF
+              on the gated host), clears the CF_Authorization session cookie.
+              Same-origin anchor, no serverless code, no secret. */}
+          <a
+            href="/cdn-cgi/access/logout"
+            aria-label="Sign out"
+            title="Sign out — ends your GrowME login session"
+            className="px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 active:scale-95 text-[#8B95A5] hover:text-[#F87171] border border-transparent hover:border-[#F87171]/30 hover:bg-[#F87171]/5 no-underline"
+          >
+            <LogOut size={15} /> <span className="hidden sm:inline">Sign out</span>
+          </a>
         </div>
       </div>
 

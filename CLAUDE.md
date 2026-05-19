@@ -20,12 +20,18 @@ updated: 2026-05-12
 
 ## Quick Status
 
-- **Version**: 1.8.3 (May 19, 2026)
+- **Version**: 1.9.0 (May 19, 2026)
 - **Live URL**: https://cro.growmeapps.io (use this — `cro-ai-agent.vercel.app` is a known-dead alias)
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
 - **Build status**: Passing (`npx vite build` verified — 2143 modules, ~3.5s)
 - **All 6 API endpoints**: analyze, chat, generateCode, generateABTests, learnings, discover
+
+### 🚪 Access gate (since v1.9.0)
+- Site is gated by **Cloudflare Access** — every request to `cro.growmeapps.io` (incl. `/api/*`) requires a signed-in `@growme.ca` Google identity. App `fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83`, policy `bbae3fad-…`.
+- Access only enforces on the **proxied** DNS record (orange-cloud). If you ever grey-cloud `cro.growmeapps.io` for debugging, the gate stops enforcing — keep it orange.
+- Sign out → `/cdn-cgi/access/logout` (anchor in the header next to GROWAGENT). Cloudflare-served on the gated host, clears `CF_Authorization`. No serverless code.
+- **Rollback if Google breaks**: PUT app `allowed_idps:[]` → built-in OTP IdP returns instantly.
 
 ### 🔐 Gemini key + abuse invariants (READ BEFORE TOUCHING api/*.js)
 - Key is **server-side ONLY**: `process.env.GEMINI_API_KEY` in `api/*.js`. **Never** `VITE_GEMINI_API_KEY` (Vite inlines `VITE_*` into the browser bundle — contributed to the 2026-05-19 hub suspension).
@@ -42,6 +48,14 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 **Key differentiator**: The app has a **learning system** — it remembers past audits and chat feedback in localStorage, and feeds that knowledge into future AI prompts so recommendations get smarter over time.
 
 ## Session History
+
+### v1.9.0 (May 19, 2026) — Cloudflare Access gate (Google SSO, @growme.ca only) + in-app Sign out
+- CRO is now behind Cloudflare Access at the edge. App `fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83` on `cro.growmeapps.io`, single Google IdP (`e74686ab-…` *Google (GrowME Workspace)*), session 168h, `auto_redirect_to_identity=false` so the branded GrowME login screen shows ("Sign in with Google" button) instead of an instant Google jump.
+- Allow policy `bbae3fad-…` (decision=allow, precedence=1) — `include:[{email_domain:{domain:"growme.ca"}}]`. Any `@growme.ca` Workspace identity is admitted; everyone else denied at edge. One rule difference from the Dev Hub (which uses a per-email allowlist).
+- Org `login_design.header_text` neutralized "GrowME Developer Hub" → "GrowME"; footer → "GrowME team access only — questions? ammar@growme.ca". Org-wide (also affects Dev Hub login screen), navy/white brand preserved.
+- In-app Sign out: header anchor next to GROWAGENT logo → `/cdn-cgi/access/logout`. Pure same-origin anchor, no serverless code, no secret. Uses lucide `LogOut` icon.
+- Verified live: unauth GET / → 302 to `growme.cloudflareaccess.com`; unauth POST /api/chat → also 302 to gate (no API bypass); /cdn-cgi/access/logout → 200; API round-trip confirms config values stuck.
+- Rollback path: PUT app `allowed_idps:[]` → OTP IdP returns (account-level break-glass).
 
 ### v1.8.3 (May 19, 2026) — Exhaustive key-leak + abuse-vector hardening (`0498b4d`)
 - Deep follow-up audit after v1.8.2. Every key-exposure path + every abuse vector across all 6 endpoints.
@@ -270,9 +284,9 @@ After making ANY code change, you MUST update the following files before committ
 | Field | Value |
 |-------|-------|
 | **Last session date** | 2026-05-19 |
-| **What was done** | Post-incident security work (hub `growme-217600` suspended). v1.8.2: 5-point verification, found+fixed the upstream-error key leak (`cca4b87`), triggered the stale redeploy binding the new restricted key, E2E verified. v1.8.3: exhaustive follow-up audit of every key-leak path + abuse vector (`0498b4d`) — fixed PageSpeed Gemini-key fallback, catch-all `err.message` leak, added rate limiting to the 4 unprotected endpoints, closed the `checkUrls()` SSRF, added chat token-bomb cap, made learnings DELETE fail-closed. Docs + Asana canonical updated. |
-| **Next step** | (1) Refresh local `.env.development.local` with the new growme-internal-ai key for local dev (production fine). (2) Parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). In parallel: checklist drill-down, component extraction, SPA support. |
-| **Blockers** | None for production (key migrated + restricted, all leak/abuse vectors closed, verified live). Local-dev `.env.development.local` still holds the dead key — refresh before `vercel dev`. Unlimited-mode awaiting Abas. |
+| **What was done** | v1.8.2: post-incident verification + upstream-error key leak fix (`cca4b87`). v1.8.3: exhaustive key-leak + abuse-vector audit, hardening (`0498b4d`) — PageSpeed Gemini-key fallback dropped, catch-all `err.message` sanitized, rate limiting added to 4 unprotected endpoints, checkUrls SSRF closed, chat token-bomb cap, learnings DELETE fail-closed. **v1.9.0: Cloudflare Access gate live** — `cro.growmeapps.io` now requires `@growme.ca` Google sign-in at the edge before any Vercel function or static asset serves. Branded GrowME login screen, 168h session, in-app Sign out anchor. Org login_design neutralized for both apps. Docs + Asana canonical updated. |
+| **Next step** | (1) Real-browser incognito smoke test of the new gate (visit, see branded screen, sign in with @growme.ca, verify app loads; try non-@growme.ca, verify denied). (2) Refresh local `.env.development.local` with the new growme-internal-ai key for local dev (production fine). (3) Parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
+| **Blockers** | None for production (gate enforcing, all leak/abuse vectors closed, verified live). Local-dev `.env.development.local` still holds the dead Gemini key — refresh before `vercel dev`. Unlimited-mode awaiting Abas. |
 
 ---
 
