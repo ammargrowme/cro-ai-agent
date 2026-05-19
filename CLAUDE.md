@@ -31,6 +31,7 @@ updated: 2026-05-12
 - Site is gated by **Cloudflare Access** — every request to `cro.growmeapps.io` (incl. `/api/*`) requires a signed-in `@growme.ca` Google identity. App `fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83`, policy `bbae3fad-…`.
 - Access only enforces on the **proxied** DNS record (orange-cloud). If you ever grey-cloud `cro.growmeapps.io` for debugging, the gate stops enforcing — keep it orange.
 - Sign out → `/cdn-cgi/access/logout` (anchor in the header next to GROWAGENT). Cloudflare-served on the gated host, clears `CF_Authorization`. No serverless code.
+- Denied-user message (wrong domain): `custom_deny_message="GrowME team only Sign in with your GrowME work email account"` (1.9.0a). **Cloudflare validation rules learned** — `custom_deny_message` rejects `,.!:@?-` and is capped at **75 chars**; a failing PUT is atomic (existing fields untouched on 400).
 - **Rollback if Google breaks**: PUT app `allowed_idps:[]` → built-in OTP IdP returns instantly.
 
 ### 🔐 Gemini key + abuse invariants (READ BEFORE TOUCHING api/*.js)

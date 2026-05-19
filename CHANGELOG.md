@@ -2,6 +2,49 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.9.0a] - 2026-05-19 — denied-user UX: set custom_deny_message on the Access app
+
+User feedback right after the 1.9.0 rollout: signing in with a non-`@growme.ca`
+Google account lands on Cloudflare's generic
+`/cdn-cgi/access/authorized?nonce=…&state=…` page reading **"Invalid login
+session — Please try going to the URL of your application again"**. The
+recovery link works, but the wording is confusing — it sounds like a bug, not
+a domain restriction.
+
+Fix (pure Cloudflare edge config, no repo change):
+- PUT `/accounts/{acc}/access/apps/fedd9c2b-…` adding
+  `custom_deny_message = "GrowME team only Sign in with your GrowME work email account"`.
+  This Cloudflare-served message replaces the generic "Invalid login session"
+  body on the Access deny page so a wrong-domain visitor immediately
+  understands the restriction.
+- Sent only the writable-field set (mirrored Dev Hub's proven pattern: type,
+  name, domain, self_hosted_domains, destinations, allowed_idps,
+  auto_redirect_to_identity, session_duration, app_launcher_visible, tags,
+  enable_binding_cookie, http_only_cookie_attribute, options_preflight_bypass,
+  custom_deny_message). Omitted id/uid/aud/created_at/updated_at/policies.
+
+Validation rules learned (worth recording — Cloudflare doesn't document them
+in the OpenAPI):
+- `custom_deny_message` rejects any string containing `,.!:@?-` (HTTP 400).
+- `custom_deny_message` capped at **75 chars** (HTTP 400 over the limit).
+- A failing PUT is atomic — the previously-set fields and the inline policies
+  sub-resource are untouched on validation failure. Verified by re-GET after
+  each 400.
+
+Verified post-PUT (authenticated API): `custom_deny_message` set ✓
+`auto_redirect_to_identity=false` ✓ `allowed_idps=[Google]` ✓
+`session_duration=168h` ✓ policy `bbae3fad-…` allow + `email_domain:growme.ca`
+**survived the PUT** ✓ (the Dev Hub gotcha: writable-field-only PUT preserves
+the inline policies sub-resource, but always re-GET to confirm). Live edge:
+unauth GET `https://cro.growmeapps.io/` → still 302 to
+`growme.cloudflareaccess.com` (gate enforces).
+
+Pending: real-browser confirmation (Ammar) that the deny page now reads the
+new message instead of "Invalid login session". If Cloudflare's
+`/cdn-cgi/access/authorized` page doesn't pick up `custom_deny_message` and
+still shows the generic copy, fallback is to set `custom_deny_url` (redirect
+denied users to a clean destination) — that's a second iteration.
+
 ## [1.9.0] - 2026-05-19 — Cloudflare Access gate (Google SSO, @growme.ca only) + in-app Sign out
 
 CRO AI Agent is now gated behind Cloudflare Access at the edge: every request
