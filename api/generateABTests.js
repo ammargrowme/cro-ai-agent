@@ -38,7 +38,10 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      return res.status(response.status).json({ error: errorText });
+      console.error("[ABTEST ERROR] HTTP", response.status, errorText.substring(0, 300));
+      // SECURITY: never echo the raw upstream error to the client — Google's
+      // error body embeds the API key (api_key:AIza...).
+      return res.status(response.status).json({ error: `AI service error (HTTP ${response.status})` });
     }
 
     const data = await response.json();

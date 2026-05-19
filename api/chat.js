@@ -151,7 +151,10 @@ RULES:
     if (!response.ok) {
       const errorText = await response.text();
       console.error("[CHAT ERROR] HTTP", response.status, errorText.substring(0, 300));
-      return res.status(response.status).json({ error: errorText });
+      // SECURITY: never echo the raw upstream error to the client — Google's
+      // error body embeds the API key (api_key:AIza...). Log server-side only,
+      // return a generic status to the browser.
+      return res.status(response.status).json({ error: `AI service error (HTTP ${response.status})` });
     }
 
     const data = await response.json();
