@@ -2,6 +2,65 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.8.2] - 2026-05-19 — Post-incident security hardening + key migration
+
+### Context
+Shared GCP project `growme-217600` ("GrowME Central Hub") was suspended by Google
+on 2026-05-19 for credential-hijack abuse (a leaked client-side key was harvested).
+CRO's Gemini key lived on that hub. Incident report (local-only):
+`Code/Ops/GCP Audit/reports/incident-growme-217600-suspension-2026-05-19.md`.
+
+### Changed
+- **Gemini key migrated off the shared hub** to a new decoupled GCP project
+  `growme-internal-ai` (#919776932441, GrowME Internal folder). The new key
+  "CRO AI Agent Gemini" is API-target-RESTRICTED to
+  `generativelanguage.googleapis.com` only (resource
+  `projects/919776932441/locations/global/keys/6933c74b-6f4f-424a-8ec4-f2c115f98e68`).
+  Vercel env `GEMINI_API_KEY` updated by Ammar; production redeployed
+  (`cca4b87`, deployment `dpl_2Ky9biSUXbxp9Jv5nGapxWXmFSYx`) so the new value
+  binds. The key value itself is never stored in the repo.
+
+### Fixed (SECURITY)
+- **API error handlers leaked the Gemini key to the browser.** `api/chat.js`,
+  `api/generateCode.js`, and `api/generateABTests.js` returned the raw upstream
+  Gemini error body to the client on a non-ok response
+  (`return res.status(s).json({ error: errorText })`). Google's error JSON
+  embeds the key verbatim (`"Consumer 'api_key:AIza...' has been suspended"`),
+  so any Gemini 403/429/5xx echoed the live key into the browser. Confirmed
+  live on production before the fix. Now all three log the upstream error
+  server-side only and return a generic `AI service error (HTTP <status>)` —
+  matching the pattern `api/analyze.js` already used. Commit `cca4b87`.
+
+### Verified
+- **Client-side bundle clean (the project's known failure mode).** Every served
+  asset on `https://cro.growmeapps.io` (HTML + 3 main chunks + 4 lazy chunks +
+  CSS) scanned for `AIza[0-9A-Za-z_-]{10,}` → **zero matches**, pre and post
+  redeploy. Bundle hash identical pre/post (`index-Cf_fH5Wz.js`) confirming the
+  fix touched only server-side `api/*.js`.
+- **No direct browser→Google API call.** No `generativelanguage` reference in
+  any client file. Only `googleapis.com` hit is `fonts.googleapis.com` (Google
+  Fonts CSS — benign).
+- **No VITE_ regression.** All 4 Gemini handlers read only
+  `process.env.GEMINI_API_KEY` (no VITE_ fallback). No active
+  `VITE_GEMINI_API_KEY` assignment anywhere (only incident-history comments).
+- **End-to-end on new key.** `POST /api/chat` on production → HTTP 200 with real
+  Gemini output. Old-key `CONSUMER_SUSPENDED` 403 gone.
+
+### Invariant (do not regress)
+> The Gemini key is **server-side only**. Never `VITE_GEMINI_API_KEY`, never in
+> the client JS bundle, never a direct browser→`generativelanguage` call, and
+> **never echo a raw upstream Google error to the client** (it embeds the key).
+> Keys live only in `api/*.js` via `process.env.GEMINI_API_KEY`.
+
+### Known follow-up (non-blocking, local-dev only)
+- `.env.development.local` comments still describe `growme-217600` as the
+  "current" project and its `GEMINI_API_KEY` value is the now-dead suspended
+  key. Production is unaffected (Vercel has the new env). Local dev / `vercel
+  dev` will 403 until the local file is refreshed with the new
+  `growme-internal-ai` key string (retrieve via `gcloud services api-keys
+  get-key-string projects/919776932441/locations/global/keys/6933c74b-6f4f-424a-8ec4-f2c115f98e68 --configuration=growme-ammar`).
+  Not done here — never print/commit key values.
+
 ## [1.8.1] - 2026-05-12
 
 ### Changed

@@ -20,12 +20,17 @@ updated: 2026-05-12
 
 ## Quick Status
 
-- **Version**: 1.8.1 (May 12, 2026)
-- **Live URL**: https://cro-ai-agent.vercel.app/ (alias: https://cro.growmeapps.io)
+- **Version**: 1.8.2 (May 19, 2026)
+- **Live URL**: https://cro.growmeapps.io (use this — `cro-ai-agent.vercel.app` is a known-dead alias)
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
 - **Build status**: Passing (`npx vite build` verified — 2143 modules, ~3.5s)
-- **All 6 API endpoints**: analyze, chat, generateCode, generateABTests, learnings, **discover** (new in 1.8.0)
+- **All 6 API endpoints**: analyze, chat, generateCode, generateABTests, learnings, discover
+
+### 🔐 Gemini key invariant (READ BEFORE TOUCHING api/*.js)
+- Key is **server-side ONLY**: `process.env.GEMINI_API_KEY` in `api/*.js`. **Never** `VITE_GEMINI_API_KEY` (Vite inlines `VITE_*` into the browser bundle — this leak contributed to the 2026-05-19 hub suspension).
+- **Never echo a raw upstream Google error to the client** — Gemini's error JSON embeds `api_key:AIza...`. Log server-side, return a generic message (see `api/analyze.js` for the safe pattern; all 4 handlers now follow it as of `cca4b87`).
+- Key lives in GCP project **`growme-internal-ai`** (#919776932441), restricted to `generativelanguage.googleapis.com` only. If a feature needs another Google API it will 403 — flag it, do **not** widen the key. Key string never in the repo.
 
 ## What This Project Is
 
@@ -34,6 +39,17 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 **Key differentiator**: The app has a **learning system** — it remembers past audits and chat feedback in localStorage, and feeds that knowledge into future AI prompts so recommendations get smarter over time.
 
 ## Session History
+
+### v1.8.2 (May 19, 2026) — Post-incident security verification + key migration
+- **Trigger**: shared GCP project `growme-217600` suspended by Google for credential-hijack abuse; CRO's key lived there. Incident report: `Code/Ops/GCP Audit/reports/incident-growme-217600-suspension-2026-05-19.md`.
+- **5-point security check run**:
+  - ✅ Live client-side bundle scan (CRO's known failure mode): zero `AIza*` across all served HTML/JS/CSS, pre + post redeploy. No `generativelanguage` in client. Only `googleapis.com` ref is Google Fonts.
+  - ✅ No VITE_ regression: 4 handlers read only `process.env.GEMINI_API_KEY`; no active `VITE_GEMINI` assignment (comments only).
+  - ✅ Vercel env hygiene: env change had **not** been redeployed (latest prod deploy was 2026-05-12, 6.8 days stale) → fixed by the security-fix push which triggered the redeploy (`cca4b87` → `dpl_2Ky9biSUXbxp9Jv5nGapxWXmFSYx`, READY).
+  - ✅ E2E on new key: `POST /api/chat` prod → HTTP 200 + real Gemini output. Old-key 403/CONSUMER_SUSPENDED gone.
+- **NEW DEFECT FOUND + FIXED** (`cca4b87`): `chat.js`/`generateCode.js`/`generateABTests.js` returned the raw upstream Gemini error to the browser, which embeds `api_key:AIza...`. Confirmed leaking the suspended key live before the fix. Sanitized to generic `AI service error (HTTP <status>)`, log server-side only. `analyze.js` was already safe.
+- **Key migrated** off the hub to `growme-internal-ai` (#919776932441), restricted to `generativelanguage.googleapis.com`. Ammar updated Vercel env; redeploy bound the new value.
+- **Non-blocking follow-up**: local `.env.development.local` still points at the dead growme-217600 key + has stale "current project" comments — local dev will 403 until refreshed (production unaffected).
 
 ### v1.8.1 (May 12, 2026) — UI Cleanup + CTA Audit False-Positive Fixes
 - UI cleanup (commit `f8e947f`): Auto/Manual toggle, page-preview chips, and Manual textarea hoisted out of Advanced into a slim accessible row directly under the URL input. Auto-audit is the visible default (orange pill highlighted on load).
@@ -244,10 +260,10 @@ After making ANY code change, you MUST update the following files before committ
 
 | Field | Value |
 |-------|-------|
-| **Last session date** | 2026-05-12 |
-| **What was done** | Shipped v1.8.0 (full-site audit, link/CTA/form health, CXL knowledge), then v1.8.1 fixing CTA-audit false positives + UI cleanup hoisting the Auto/Manual toggle out of Advanced into an accessible row under the URL input. One-click Auto-audit flow added (discovery runs inline on Analyze click). Three Gemini keys neutralized. Live bundle confirmed key-free. **Parked decision: "unlimited / deep audit mode" past the 25-page cap** — three options laid out (raise cap to 100 / chunked sync / async job queue), awaiting Abas's decision via Slack DM (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
-| **Next step** | Wait on Abas's call for the unlimited-mode option. In parallel, available work: checklist drill-down (clickable category circles for per-item pass/fail), component extraction (App.jsx 2400+ lines — pull out the new health cards), Phase 2 SPA support via `@sparticuz/chromium` + `puppeteer-core`. See TODO.md DECISION PENDING section. |
-| **Blockers** | Awaiting Abas decision on unlimited-mode architecture (option 1, 2, or 3). |
+| **Last session date** | 2026-05-19 |
+| **What was done** | Post-incident security verification after the `growme-217600` hub suspension. Ran the 5-point check: live bundle clean (zero `AIza`, pre+post), no VITE_ regression, no direct browser→Google call. **Found + fixed a new key-leak**: 3 API handlers echoed the raw upstream Gemini error (embeds `api_key:AIza...`) to the browser — sanitized in `cca4b87`. That push also triggered the missing redeploy (the Vercel env change had been stale for 6.8 days), binding the new `growme-internal-ai` restricted key. E2E confirmed: prod `/api/chat` → 200 + real Gemini output. Docs + Asana canonical comment updated. |
+| **Next step** | (1) Refresh local `.env.development.local` with the new growme-internal-ai key for local dev (production already fine). (2) Still parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). In parallel: checklist drill-down, component extraction, SPA support (see TODO.md DECISION PENDING). |
+| **Blockers** | None for production (key migrated, leak closed, verified live). Local-dev `.env.development.local` still holds the dead key — refresh before running `vercel dev` locally. Unlimited-mode still awaiting Abas. |
 
 ---
 
