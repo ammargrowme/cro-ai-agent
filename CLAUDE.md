@@ -66,7 +66,7 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 - Verified clean: key-bearing URLs never logged/returned, no prod sourcemaps, discover crawl SSRF bounded by same-origin filter.
 
 ### v1.8.2 (May 19, 2026) — Post-incident security verification + key migration
-- **Trigger**: shared GCP project `growme-217600` suspended by Google for credential-hijack abuse; CRO's key lived there. Incident report: `Code/Ops/GCP Audit/reports/incident-growme-217600-suspension-2026-05-19.md`.
+- **Trigger**: shared GCP project `growme-217600` suspended by Google for credential-hijack abuse; CRO's key lived there. Incident report: `Code/ops/gcp-audit/reports/incident-growme-217600-suspension-2026-05-19.md`.
 - **5-point security check run**:
   - ✅ Live client-side bundle scan (CRO's known failure mode): zero `AIza*` across all served HTML/JS/CSS, pre + post redeploy. No `generativelanguage` in client. Only `googleapis.com` ref is Google Fonts.
   - ✅ No VITE_ regression: 4 handlers read only `process.env.GEMINI_API_KEY`; no active `VITE_GEMINI` assignment (comments only).
@@ -199,7 +199,7 @@ See [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) for resolved issues history and
 
 See [docs/FILE-MAP.md](docs/FILE-MAP.md) for complete directory listing with file descriptions.
 
-## Reference Docs
+## Reference docs
 
 | Document | Contents |
 |----------|----------|
@@ -286,13 +286,13 @@ After making ANY code change, you MUST update the following files before committ
 | Field | Value |
 |-------|-------|
 | **Last session date** | 2026-05-19 |
-| **What was done** | v1.8.2: post-incident verification + upstream-error key leak fix (`cca4b87`). v1.8.3: exhaustive key-leak + abuse-vector audit, hardening (`0498b4d`) — PageSpeed Gemini-key fallback dropped, catch-all `err.message` sanitized, rate limiting added to 4 unprotected endpoints, checkUrls SSRF closed, chat token-bomb cap, learnings DELETE fail-closed. **v1.9.0: Cloudflare Access gate live** — `cro.growmeapps.io` now requires `@growme.ca` Google sign-in at the edge before any Vercel function or static asset serves. Branded GrowME login screen, 168h session, in-app Sign out anchor. Org login_design neutralized for both apps. Docs + Asana canonical updated. |
+| **What was done** | v1.8.2: post-incident verification + upstream-error key leak fix (`cca4b87`). v1.8.3: exhaustive key-leak + abuse-vector audit, hardening (`0498b4d`) — PageSpeed Gemini-key fallback dropped, catch-all `err.message` sanitized, rate limiting added to 4 unprotected endpoints, checkUrls SSRF closed, chat token-bomb cap, learnings DELETE fail-closed. **v1.9.0: Cloudflare Access gate live** — `cro.growmeapps.io` now requires `@growme.ca` Google sign-in at the edge before any Vercel function or static asset serves. Branded GrowME login screen, 168h session, in-app Sign out anchor. Org login_design neutralized for both apps. docs + Asana canonical updated. |
 | **Next step** | (1) Optional cleanup: revert `custom_deny_message` on app `fedd9c2b-…` (one PUT) — it's harmless dead config since Google IdP Internal-consent makes Cloudflare's deny path unreachable in production. (2) Refresh local `.env.development.local` with the new growme-internal-ai key for local dev (production fine). (3) Parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
 | **Blockers** | None for production (gate live + enforcing, sign-out works, authorized flow clean-tested green by Ammar, all v1.8.x leak/abuse vectors closed, verified live). Local-dev `.env.development.local` still holds the dead Gemini key — refresh before `vercel dev`. Unlimited-mode awaiting Abas. |
 
 ---
 
-## Mandatory Docs
+## Mandatory docs
 
 > **Update ALL of the following with every code change, before committing. No exceptions.**
 
