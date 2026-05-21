@@ -35,11 +35,12 @@ to itself.
 4. **Redeploy**: doc-commit push triggered Vercel auto-deploy, binding
    the new key value to the production runtime.
 
-5. **Old key retired**: `gcloud services api-keys delete` removed
-   `6933c74b-6f4f-424a-8ec4-f2c115f98e68` on `growme-internal-ai`
-   (#919776932441). The growme-internal-ai PROJECT itself stays alive
-   because Workload Dashboard's old key is still attached pending their
-   own VPS env swap.
+5. **Old key retired**: the entire `growme-internal-ai` project
+   (#919776932441) was deleted by Ammar after both consumer migrations
+   completed (CRO this session, Workload Dashboard earlier today). Old
+   CRO Gemini key `6933c74b-6f4f-424a-8ec4-f2c115f98e68` removed as part
+   of that project deletion. Verified absent from `gcloud projects list`
+   in any lifecycle state.
 
 6. **Docs updated**: `.env.example`, `CLAUDE.md` (invariant block +
    Session History + Resume Point + frontmatter version /
@@ -53,8 +54,8 @@ to itself.
 
 - Vercel `env ls`: `GEMINI_API_KEY` shows in Production, encrypted.
 - Vercel prod deployment after doc-push: READY.
-- gcloud API key list on `growme-internal-ai`: old CRO key absent
-  (only the Workload-leftover `1e10623c-…` remains, by design).
+- `gcloud projects list`: `growme-internal-ai` (#919776932441) gone, no
+  lifecycle state. Old CRO key cascade-deleted with the project.
 - gcloud API key list on `growme-cro`: new key `4542a38d-…` present and
   API-restricted to `generativelanguage.googleapis.com`.
 

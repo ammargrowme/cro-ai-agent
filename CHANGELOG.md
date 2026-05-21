@@ -32,11 +32,12 @@ radius.
 
 ### Removed
 
-- Old CRO Gemini key `6933c74b-6f4f-424a-8ec4-f2c115f98e68` on
-  `growme-internal-ai` (#919776932441) deleted via
-  `gcloud services api-keys delete`. The `growme-internal-ai` PROJECT
-  itself stays alive for now — Workload Dashboard's old key
-  `1e10623c-…` is still attached pending Workload's VPS env swap.
+- The entire `growme-internal-ai` project (#919776932441) was deleted by
+  Ammar after both consumers' migrations completed (CRO → `growme-cro`
+  this session, Workload Dashboard → `growme-workload` earlier today).
+  Old CRO Gemini key `6933c74b-6f4f-424a-8ec4-f2c115f98e68` removed as
+  part of that project deletion. Verified gone via `gcloud projects list`
+  — not present in any lifecycle state.
 
 ### Security
 
