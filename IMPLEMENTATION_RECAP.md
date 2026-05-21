@@ -4,6 +4,75 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 14: v1.9.1 — GCP project migration to dedicated `growme-cro` — May 20, 2026
+
+**Goal**: Finish the post-incident consumer-isolation work. After the
+shared `growme-217600` hub was suspended (2026-05-19) and CRO's key was
+parked on `growme-internal-ai` alongside Workload Dashboard, move CRO to
+its OWN dedicated GCP project so each consumer's blast radius is bounded
+to itself.
+
+### What Was Done
+
+1. **New GCP project provisioned** (out-of-band, before this session):
+   `growme-cro` (#869955258560), folder `GrowME Internal` (387614648962),
+   billing `01A67F-17D7E9-CFA36D` (GrowME Marketing Billing, CAD). Only
+   `generativelanguage.googleapis.com` API enabled. Hardened with CA$15/mo
+   budget + 50/90/100% alerts via `scripts/harden-project.sh`.
+
+2. **New Gemini key created**: "CRO AI Agent Gemini",
+   `projects/869955258560/locations/global/keys/4542a38d-e166-47ff-8fc5-c39e1e9ab536`,
+   API-target restricted to `generativelanguage.googleapis.com`.
+
+3. **Vercel env swap**: `GEMINI_API_KEY` on Production swapped via Vercel
+   dashboard (Preview deferred — CRO is production-only flow). The Vercel
+   CLI v51/v54 has a bug where `vercel env add NAME preview --value …
+   --yes` keeps rejecting "all preview branches" form despite the help
+   text claiming it works, so Production was added via CLI and Preview is
+   intentionally left empty for now. `VITE_GEMINI_API_KEY` confirmed
+   absent from Vercel (already cleaned out 2026-05-12).
+
+4. **Redeploy**: doc-commit push triggered Vercel auto-deploy, binding
+   the new key value to the production runtime.
+
+5. **Old key retired**: `gcloud services api-keys delete` removed
+   `6933c74b-6f4f-424a-8ec4-f2c115f98e68` on `growme-internal-ai`
+   (#919776932441). The growme-internal-ai PROJECT itself stays alive
+   because Workload Dashboard's old key is still attached pending their
+   own VPS env swap.
+
+6. **Docs updated**: `.env.example`, `CLAUDE.md` (invariant block +
+   Session History + Resume Point + frontmatter version /
+   gcp_project / gemini_key_resource), `CHANGELOG.md`. No code change.
+
+7. **Asana canonical comment PUT-edited in place** on task `1214758226073235`
+   (comment gid `1214758294364623`). Following the universal one-canonical
+   rule.
+
+### Verification
+
+- Vercel `env ls`: `GEMINI_API_KEY` shows in Production, encrypted.
+- Vercel prod deployment after doc-push: READY.
+- gcloud API key list on `growme-internal-ai`: old CRO key absent
+  (only the Workload-leftover `1e10623c-…` remains, by design).
+- gcloud API key list on `growme-cro`: new key `4542a38d-…` present and
+  API-restricted to `generativelanguage.googleapis.com`.
+
+### State at Session End
+
+- Branch: `main`
+- Latest commit: GCP migration doc commit
+- Production: live on new growme-cro key
+- Pending follow-up (next session):
+  - **Cloudflare Access OAuth decoupling**: CRO currently shares Dev Hub's
+    Google OAuth client (IdP `e74686ab-…`). Awaiting Ammar's CRO-specific
+    OAuth client JSON to detach.
+  - Refresh local `.env.development.local` with the growme-cro key (local
+    dev only — gitignored, production fine).
+  - Unlimited / deep audit mode still parked, awaiting Abas Slack decision.
+
+---
+
 ## Session 13: UI cleanup + unlimited-mode decision parked — May 12, 2026
 
 **Goal**: Make the input workflow less cumbersome (Auto/Manual toggle buried in Advanced, three-step flow to start an audit), make Auto the obvious default, and scope an "unlimited" audit mode for larger sites.

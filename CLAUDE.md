@@ -3,7 +3,7 @@ type: project
 title: "CRO AI Agent"
 stack: "React/Vite/Gemini"
 status: stable
-version: "v1.8.1"
+version: "v1.9.1"
 asana_gid: "1214758226073235"
 asana_canonical_comment_gid: "1214758294364623"
 asana_url: "https://app.asana.com/1/93326763080426/project/979744792423226/task/1214758226073235"
@@ -11,7 +11,9 @@ asana_predecessors:
   - "1213247116207786"  # Build a CRO AI AGENT (closed 2026-03-15)
   - "1213655562211572"  # Improve CRO AI Agent (closed 2026-03-24)
   - "1213900425643638"  # CRO AI Agent (closed 2026-04-24)
-updated: 2026-05-12
+gcp_project: "growme-cro (#869955258560)"
+gemini_key_resource: "projects/869955258560/locations/global/keys/4542a38d-e166-47ff-8fc5-c39e1e9ab536"
+updated: 2026-05-20
 ---
 
 # CLAUDE.md — GROWAGENT CRO AI Agent
@@ -20,7 +22,7 @@ updated: 2026-05-12
 
 ## Quick Status
 
-- **Version**: 1.9.0 (May 19, 2026)
+- **Version**: 1.9.1 (May 20, 2026)
 - **Live URL**: https://cro.growmeapps.io (use this — `cro-ai-agent.vercel.app` is a known-dead alias)
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
@@ -39,7 +41,7 @@ updated: 2026-05-12
 - Key is **server-side ONLY**: `process.env.GEMINI_API_KEY` in `api/*.js`. **Never** `VITE_GEMINI_API_KEY` (Vite inlines `VITE_*` into the browser bundle — contributed to the 2026-05-19 hub suspension).
 - **Never echo upstream Google errors OR `err.message` to the client.** Gemini's error JSON embeds `api_key:AIza...`, and a `fetch()` failure to the key-bearing URL can put that URL in `err.message`. Log server-side, return a generic message. All handlers' `!response.ok` AND catch-all paths follow this as of `cca4b87` + `0498b4d`.
 - **Never use the Gemini key for any non-Gemini Google API.** The key is restricted to `generativelanguage.googleapis.com`. PageSpeed (a different API) must use the operator's own key or run keyless — never `|| apiKey` fallback (`0498b4d`).
-- Key lives in GCP project **`growme-internal-ai`** (#919776932441). If a feature needs another Google API it will 403 — flag it, do **not** widen the key. Key string never in the repo.
+- Key lives in GCP project **`growme-cro`** (#869955258560), dedicated to CRO only. Restricted to `generativelanguage.googleapis.com`. CA$15/mo budget with 50/90/100% alerts. If a feature needs another Google API it will 403 — flag it, do **not** widen the key. Key string never in the repo. Key resource path: `projects/869955258560/locations/global/keys/4542a38d-e166-47ff-8fc5-c39e1e9ab536`.
 - **Every public endpoint MUST `rateLimit()`** (it calls Gemini/Redis on our credential — unbounded use = the abuse that suspended the hub). Current: analyze 5, chat 15, discover 10, generateCode 10, generateABTests 10, learnings 30 (per IP/min).
 - **Every server-side `fetch()` of a user/derived URL MUST pass `validateUrl()`** (SSRF). Includes extracted links fed to `checkUrls()`.
 
@@ -50,6 +52,14 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 **Key differentiator**: The app has a **learning system** — it remembers past audits and chat feedback in localStorage, and feeds that knowledge into future AI prompts so recommendations get smarter over time.
 
 ## Session History
+
+### v1.9.1 (May 20, 2026) — GCP project migration: `growme-internal-ai` → dedicated `growme-cro`
+- Finishes the post-incident decoupling that started 2026-05-19. After the shared `growme-217600` hub was suspended, CRO's key was temporarily parked on `growme-internal-ai` alongside Workload Dashboard. Today Workload split off to its own `growme-workload` project, and CRO splits off to its own `growme-cro`. **Each consumer now owns exactly one GCP project.**
+- **New project**: `growme-cro` (#869955258560), folder `GrowME Internal` (387614648962), billing `01A67F-17D7E9-CFA36D` (GrowME Marketing Billing, CAD). APIs enabled: `generativelanguage.googleapis.com` ONLY. Hardened with CA$15/mo budget + 50/90/100% alerts via `scripts/harden-project.sh`.
+- **New key**: "CRO AI Agent Gemini", resource `projects/869955258560/locations/global/keys/4542a38d-e166-47ff-8fc5-c39e1e9ab536`, API-target restricted to `generativelanguage.googleapis.com`.
+- **Vercel env**: `GEMINI_API_KEY` swapped on Production (Preview deferred — CRO is production-only). `VITE_GEMINI_API_KEY` confirmed absent (already cleaned up 2026-05-12). New deploy bound the new value; old prod key path closed.
+- **Retired**: old CRO Gemini key `6933c74b-6f4f-424a-8ec4-f2c115f98e68` on `growme-internal-ai` (#919776932441) deleted via `gcloud services api-keys delete`. The `growme-internal-ai` PROJECT itself remains alive (Workload's old key `1e10623c-…` still attached until that team's VPS env swap completes — not CRO's concern).
+- **No code change**. Only Vercel env value + docs. Cross-ref: `Code/ops/gcp-audit/reports/post-recovery-growme-217600-2026-05-20.md`.
 
 ### v1.9.0 (May 19, 2026) — Cloudflare Access gate (Google SSO, @growme.ca only) + in-app Sign out
 - CRO is now behind Cloudflare Access at the edge. App `fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83` on `cro.growmeapps.io`, single Google IdP (`e74686ab-…` *Google (GrowME Workspace)*), session 168h, `auto_redirect_to_identity=false` so the branded GrowME login screen shows ("Sign in with Google" button) instead of an instant Google jump.
@@ -285,10 +295,10 @@ After making ANY code change, you MUST update the following files before committ
 
 | Field | Value |
 |-------|-------|
-| **Last session date** | 2026-05-19 |
-| **What was done** | v1.8.2: post-incident verification + upstream-error key leak fix (`cca4b87`). v1.8.3: exhaustive key-leak + abuse-vector audit, hardening (`0498b4d`) — PageSpeed Gemini-key fallback dropped, catch-all `err.message` sanitized, rate limiting added to 4 unprotected endpoints, checkUrls SSRF closed, chat token-bomb cap, learnings DELETE fail-closed. **v1.9.0: Cloudflare Access gate live** — `cro.growmeapps.io` now requires `@growme.ca` Google sign-in at the edge before any Vercel function or static asset serves. Branded GrowME login screen, 168h session, in-app Sign out anchor. Org login_design neutralized for both apps. docs + Asana canonical updated. |
-| **Next step** | (1) Optional cleanup: revert `custom_deny_message` on app `fedd9c2b-…` (one PUT) — it's harmless dead config since Google IdP Internal-consent makes Cloudflare's deny path unreachable in production. (2) Refresh local `.env.development.local` with the new growme-internal-ai key for local dev (production fine). (3) Parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
-| **Blockers** | None for production (gate live + enforcing, sign-out works, authorized flow clean-tested green by Ammar, all v1.8.x leak/abuse vectors closed, verified live). Local-dev `.env.development.local` still holds the dead Gemini key — refresh before `vercel dev`. Unlimited-mode awaiting Abas. |
+| **Last session date** | 2026-05-20 |
+| **What was done** | **v1.9.1: CRO Gemini key migrated off shared `growme-internal-ai` onto its own dedicated `growme-cro` GCP project (#869955258560)** — finishes the post-incident decoupling. New project is hardened with CA$15/mo budget + alerts and locked to `generativelanguage.googleapis.com` only. Vercel `GEMINI_API_KEY` swapped on Production, prod redeploy bound the new value, old key `6933c74b-…` on `growme-internal-ai` deleted. No code change. CLAUDE.md / CHANGELOG / IMPLEMENTATION_RECAP / Asana canonical updated. |
+| **Next step** | (1) **Cloudflare Access OAuth decoupling** — CRO's gate currently shares the Dev Hub's Google OAuth client (IdP `e74686ab-…` *Google (GrowME Workspace)*); awaiting Ammar's CRO-specific OAuth client JSON to swap CRO onto its own IdP and detach from Dev Hub. (2) Refresh local `.env.development.local` with the new growme-cro key (gitignored, local-dev only — production fine). (3) Optional cleanup: revert `custom_deny_message` on app `fedd9c2b-…` (one PUT; harmless dead config). (4) Parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
+| **Blockers** | None for production (gate live + enforcing, sign-out works, all v1.8.x leak/abuse vectors closed, Gemini path on new growme-cro key verified live). Cloudflare Access OAuth decoupling pending new OAuth client JSON from Ammar. Local-dev `.env.development.local` still holds the dead `growme-internal-ai` key — refresh before `vercel dev`. Unlimited-mode awaiting Abas. |
 
 ---
 

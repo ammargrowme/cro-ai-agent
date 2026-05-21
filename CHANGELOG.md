@@ -2,6 +2,57 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.9.1] - 2026-05-20 — GCP project migration: dedicated `growme-cro` (finishes post-incident decoupling)
+
+CRO AI Agent's Gemini key is now provisioned out of its own dedicated GCP
+project, completing the consumer-isolation work that started after the
+2026-05-19 `growme-217600` hub suspension. Each consumer (CRO, Workload
+Dashboard, etc.) now owns exactly one GCP project — no more shared blast
+radius.
+
+### Changed
+
+- **GCP project migration**: CRO's Gemini key moved from the shared
+  `growme-internal-ai` (#919776932441) → its own dedicated `growme-cro`
+  (#869955258560, folder `GrowME Internal` / 387614648962, billing
+  `01A67F-17D7E9-CFA36D` GrowME Marketing Billing CAD). New project
+  hardened via `scripts/harden-project.sh` with a CA$15/mo budget plus
+  50/90/100% alerts. Only `generativelanguage.googleapis.com` enabled —
+  if a feature ever needs another Google API the key will 403 and that
+  is intentional.
+- **New Gemini key**: "CRO AI Agent Gemini",
+  `projects/869955258560/locations/global/keys/4542a38d-e166-47ff-8fc5-c39e1e9ab536`,
+  API-target restricted to `generativelanguage.googleapis.com`.
+- **Vercel env**: `GEMINI_API_KEY` swapped on Production. Redeploy bound
+  the new value. `VITE_GEMINI_API_KEY` confirmed absent from Vercel (already
+  cleaned out 2026-05-12 during the original hub-to-internal-ai swap).
+- **Docs**: `.env.example`, `CLAUDE.md` (invariant block + Session History
+  + Resume Point + frontmatter version/gcp_project/gemini_key_resource),
+  `IMPLEMENTATION_RECAP.md`.
+
+### Removed
+
+- Old CRO Gemini key `6933c74b-6f4f-424a-8ec4-f2c115f98e68` on
+  `growme-internal-ai` (#919776932441) deleted via
+  `gcloud services api-keys delete`. The `growme-internal-ai` PROJECT
+  itself stays alive for now — Workload Dashboard's old key
+  `1e10623c-…` is still attached pending Workload's VPS env swap.
+
+### Security
+
+- One consumer per project: blast radius on any future credential abuse
+  is now bounded to the abused consumer's project. CRO can never again be
+  collateral damage from a shared-project compromise.
+
+### Notes
+
+- No code change. Only Vercel env value + docs.
+- Local `.env.development.local` (gitignored) still points at the dead
+  `growme-internal-ai` key — refresh manually before next `vercel dev`.
+  Production unaffected.
+- Cross-ref:
+  `Code/ops/gcp-audit/reports/post-recovery-growme-217600-2026-05-20.md`.
+
 ## [1.9.0a] - 2026-05-19 — set custom_deny_message on the Access app (later confirmed unreachable in practice; kept as harmless backstop pending future cleanup)
 
 **What I did, what I misdiagnosed, and what we actually learned.** Logged
