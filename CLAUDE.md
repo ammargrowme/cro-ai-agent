@@ -2,9 +2,9 @@
 type: project
 title: "CRO AI Agent"
 stack: "React/Vite/Gemini"
-status: stable
+status: closed
 version: "v1.9.2"
-asana_gid: "1214758226073235"
+asana_gid: "1214758226073235"  # CLOSED 2026-05-20. Future work spins a fresh task; see canonical comment for context.
 asana_canonical_comment_gid: "1214758294364623"
 asana_url: "https://app.asana.com/1/93326763080426/project/979744792423226/task/1214758226073235"
 asana_predecessors:
@@ -309,9 +309,10 @@ After making ANY code change, you MUST update the following files before committ
 | Field | Value |
 |-------|-------|
 | **Last session date** | 2026-05-20 |
-| **What was done** | **v1.9.1**: CRO Gemini key migrated off shared `growme-internal-ai` onto its own dedicated `growme-cro` GCP project (#869955258560); old project deleted entirely after both consumers migrated off. **v1.9.2: Cloudflare Access OAuth decoupling complete** — created dedicated OAuth client `869955258560-psdddm7…` in `growme-cro` (consent Internal, redirect `https://growme.cloudflareaccess.com/cdn-cgi/access/callback`), created new CF IdP `1b2d95fe-…` *Google (CRO AI Agent)*, PUT-swapped CRO Access app `fedd9c2b-…` to use it. Dev Hub IdP `e74686ab-…` and Dev Hub app `11f33d8c-…` untouched. Each consumer now owns its own OAuth client AND its own GCP project. No code change. |
-| **Next step** | (1) **Browser sign-in test by Ammar**: open `cro.growmeapps.io` in fresh incognito → click *Sign in with Google* → confirm the OAuth screen shows the CRO client (`869955258560-…`) not the Dev Hub client, and login completes. If it fails with `redirect_uri_mismatch`, the GCP redirect URI may not have saved — re-add it. (2) Refresh local `.env.development.local` with the new `growme-cro` Gemini key (gitignored, local-dev only — production fine). (3) Optional cleanup: revert `custom_deny_message` on app `fedd9c2b-…` (one PUT; harmless dead config). (4) Parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
-| **Blockers** | None for production. Gate live + enforcing on the NEW CRO IdP (verified GET app + unauth curl → 302). All v1.8.x leak/abuse vectors closed. Gemini path on new `growme-cro` key verified. `growme-internal-ai` project deleted. **Verification dependency**: live sign-in flow via the new OAuth client needs Ammar's clean-incognito test — only that confirms the GCP-side redirect URI was actually saved (the downloaded JSON didn't include it but client_id/secret are still valid, so the IdP creation succeeded). Unlimited-mode awaiting Abas. |
+| **Task status** | **CLOSED** — Asana task `1214758226073235` marked completed 2026-05-20 (completed_at 2026-05-21T01:31:42Z). All open subtasks deleted; their full context preserved verbatim in the canonical comment `1214758294364623`. Future work spins up a fresh task referencing this gid. |
+| **What was done** | **v1.9.1 + v1.9.2 + full security audit pass**. (1) Gemini key migrated to dedicated `growme-cro` GCP project (#869955258560); old `growme-internal-ai` deleted entirely. (2) Cloudflare Access OAuth decoupled — dedicated CRO OAuth client (`869955258560-…`) + dedicated CF IdP (`1b2d95fe-…`); Dev Hub untouched. (3) Security audit: 19 strong-pass checks, 3 medium SSRF findings (insider-threat scope only — behind CF Access), 1 low message-leak in discover.js, 1 info doc-drift. No production-impacting exploits. Findings captured in canonical for follow-up. |
+| **Next session** | Task is closed — no automatic continuation. When Ammar starts a new session, options are recorded verbatim in the canonical comment under "DEFERRED ITEMS" and "SECURITY AUDIT FINDINGS — DEFERRED": (A) JS-rendered SPA support / Phase 2 deep-audit mode, (B) Component extraction (split App.jsx), (C) Checklist drill-down per-item pass/fail, (D) Unlimited / deep audit mode (still awaiting Abas Slack decision), plus security findings 1-4. Pick one (or new direction), create a fresh Asana task that references predecessor `1214758226073235`, add the new task to `1210575380350972` *AI Research and Development*. |
+| **Blockers** | None. Production stable on v1.9.2. Cloudflare Access enforcing on dedicated CRO IdP. **Pending Ammar live test (carried over)**: clean-incognito sign-in via the new OAuth client to confirm GCP-side redirect URI saved. If it 403s with `redirect_uri_mismatch`, re-add `https://growme.cloudflareaccess.com/cdn-cgi/access/callback` to OAuth client `869955258560-…` and retry. Also pending: local `.env.development.local` refresh with growme-cro key (gitignored, production fine without it). |
 
 ---
 
