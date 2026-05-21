@@ -2,6 +2,68 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [1.9.2] - 2026-05-20 — Cloudflare Access OAuth decoupling: dedicated CRO IdP
+
+Finishes the OAuth-side of the consumer-isolation work. Before today, CRO's
+Cloudflare Access gate borrowed the Dev Hub's Google IdP (`e74686ab-…`,
+backed by an OAuth client in the `growme-dev-hub` GCP project). That was
+incidental rather than intentional — should never have shared. Today CRO
+got its own dedicated IdP and OAuth client in its own project.
+
+### Added
+
+- **New OAuth web client** in `growme-cro` GCP project
+  (`869955258560-psdddm7svdplsd5u5adknu24psnidq8j.apps.googleusercontent.com`).
+  OAuth consent screen User Type = **Internal** (Workspace-only — Google
+  IdP rejects wrong-domain at the OAuth layer before Cloudflare's policy
+  ever evaluates, same as Dev Hub). Authorized redirect URI:
+  `https://growme.cloudflareaccess.com/cdn-cgi/access/callback`.
+- **New Cloudflare Access IdP** `1b2d95fe-ac3a-405f-b9c4-7a5dd74b4a91`
+  *Google (CRO AI Agent)* (type=google). Created via
+  `POST /accounts/d47686239be0b47a3cbf227c7a86d250/access/identity_providers`
+  with the CRO `client_id` + `client_secret`.
+
+### Changed
+
+- **CRO Cloudflare Access app `fedd9c2b-…`** — `allowed_idps` swapped from
+  `[e74686ab-…]` (shared Dev Hub IdP) to `[1b2d95fe-…]` (dedicated CRO
+  IdP). Every other field preserved bit-for-bit from the pre-change
+  snapshot: name, domain, type, session_duration (168h),
+  auto_redirect_to_identity (false → branded login screen still shows),
+  http_only_cookie_attribute (true), custom_deny_message,
+  app_launcher_visible, enable_binding_cookie, options_preflight_bypass,
+  destinations, self_hosted_domains. Allow policy `bbae3fad-…`
+  `include:[{email_domain:{domain:"growme.ca"}}]` untouched.
+
+### Security
+
+- **Incident**: during the initial `POST identity_providers`, Cloudflare's
+  API response echoed the OAuth `client_secret` back in plaintext (most
+  providers redact on create-response; CF does not). A length-only-assumption
+  code path printed it into the conversation transcript. Mitigation: Ammar
+  rotated the OAuth client_secret in GCP Console; PUT-updated the existing
+  CF IdP with the rotated secret using strict length-only logging. The
+  leaked secret was never used by any real client and is now revoked.
+- Memory rule saved (`feedback-never-print-secrets-from-api-responses`):
+  always log length-only for `client_secret`, `token`, `password`, etc.,
+  regardless of expected provider behavior.
+
+### Removed
+
+- Both `client_secret_*.json` files shred-deleted from the project root
+  after the swap (Cloudflare holds the secret; re-download from GCP
+  Console if ever needed). The `.gitignore` pattern `client_secret*.json`
+  added in commit `7aa4371` prevents future drops from being staged.
+
+### Verified
+
+- `GET CRO app` → `allowed_idps=['1b2d95fe-…']` ✓
+- `GET Dev Hub app` → `allowed_idps=['e74686ab-…']` (untouched) ✓
+- `GET policies` → `decision=allow, include=[email_domain:growme.ca]` ✓
+- `curl -sI https://cro.growmeapps.io/` → 302 to `growme.cloudflareaccess.com` ✓
+- `curl -sI -X POST https://cro.growmeapps.io/api/chat` → 302 (no API bypass) ✓
+- **Pending Ammar**: live browser sign-in via the new OAuth client.
+
 ## [1.9.1] - 2026-05-20 — GCP project migration: dedicated `growme-cro` (finishes post-incident decoupling)
 
 CRO AI Agent's Gemini key is now provisioned out of its own dedicated GCP

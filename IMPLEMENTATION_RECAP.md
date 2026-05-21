@@ -4,6 +4,91 @@ This document provides session-by-session recaps of what was built, why, and wha
 
 ---
 
+## Session 15: v1.9.2 — Cloudflare Access OAuth decoupling — May 20, 2026
+
+**Goal**: Finish the consumer-isolation work on the OAuth side. CRO's
+Cloudflare Access gate was using the Dev Hub's Google IdP
+(`e74686ab-…`, backed by an OAuth client in the `growme-dev-hub` GCP
+project). That was incidental — Dev Hub created the IdP first, CRO
+reused it when the gate was added in v1.9.0. Each app should have its
+own OAuth client in its own project so credential rotation, audit
+trails, and consent scopes are bounded per consumer.
+
+### What Was Done
+
+1. **New OAuth client created** in `growme-cro` GCP project
+   - Client ID: `869955258560-psdddm7svdplsd5u5adknu24psnidq8j.apps.googleusercontent.com`
+   - Application type: Web application
+   - OAuth consent: User Type = **Internal** (Workspace-only)
+   - Authorized redirect URI: `https://growme.cloudflareaccess.com/cdn-cgi/access/callback`
+
+2. **New Cloudflare Access IdP created**
+   - `POST /accounts/d47686239be0b47a3cbf227c7a86d250/access/identity_providers`
+   - Result: IdP `1b2d95fe-ac3a-405f-b9c4-7a5dd74b4a91`, name *Google (CRO AI Agent)*, type=google
+   - **Incident**: CF's create-IdP response echoed the OAuth client_secret
+     verbatim (does NOT redact on POST; PUT/GET responses DO redact). A
+     length-only-assumption code path printed it into the conversation
+     transcript. Mitigation: Ammar rotated the secret in GCP Console,
+     re-downloaded the JSON, and a follow-up PUT
+     `/access/identity_providers/1b2d95fe-…` updated the IdP config with
+     the rotated secret using strict length-only logging.
+
+3. **Pre-change snapshot** of CRO Access app saved to
+   `/tmp/cf-cro-app-snapshot.json` for rollback safety.
+
+4. **PUT-swap CRO Access app** `/access/apps/fedd9c2b-…`
+   - Body built by deep-copy of the snapshot, stripping read-only fields
+     (`id`, `uid`, `aud`, `created_at`, `updated_at`, `policies`), and
+     changing `allowed_idps` from `[e74686ab-…]` to `[1b2d95fe-…]`.
+   - Every other field preserved exactly: name, domain, type,
+     session_duration, auto_redirect_to_identity, http_only_cookie_attribute,
+     custom_deny_message, app_launcher_visible, enable_binding_cookie,
+     options_preflight_bypass, destinations, self_hosted_domains, tags.
+
+5. **Cleanup**
+   - Both `client_secret_*.json` files shred-deleted from project root.
+   - `/tmp/cf-creds`, `/tmp/cf-new-idp-id`, `/tmp/cf-cro-app-snapshot.json`,
+     `/tmp/cf-idps.json` shred-deleted.
+   - `.gitignore` pattern `client_secret*.json` already in place from
+     commit `7aa4371` (same session, earlier).
+
+### Verification
+
+- `GET /access/apps/fedd9c2b-…` → `allowed_idps=['1b2d95fe-…']` ✓
+- `GET /access/apps/11f33d8c-…` (Dev Hub) → `allowed_idps=['e74686ab-…']`
+  — untouched ✓
+- `GET /access/apps/fedd9c2b-…/policies` → 1 policy, decision=allow,
+  include=[{email_domain:{domain:"growme.ca"}}] — unchanged ✓
+- `curl -sI https://cro.growmeapps.io/` → HTTP/2 302 to
+  `growme.cloudflareaccess.com` ✓
+- `curl -sI -X POST https://cro.growmeapps.io/api/chat` → HTTP/2 302
+  (no API bypass) ✓
+- **Pending live test by Ammar**: clean-incognito sign-in via the new
+  OAuth client. If a `redirect_uri_mismatch` shows on Google's screen,
+  the GCP-side redirect URI didn't save — re-add it. The downloaded JSON
+  did include the URI on the second download (after rotation), so most
+  likely this works first try.
+
+### State at Session End
+
+- Branch: `main`
+- Build: untouched (no code change this session)
+- Production: live on dedicated CRO IdP `1b2d95fe-…`
+- Open items:
+  - Browser sign-in test by Ammar (one-time confirmation)
+  - Refresh local `.env.development.local` with growme-cro Gemini key
+  - Unlimited / deep audit mode still parked, awaiting Abas Slack decision
+
+### Lesson Learned (Saved to Memory)
+
+`feedback-never-print-secrets-from-api-responses` — for ANY API response
+field named `client_secret`, `password`, `token`, `api_key`, `secret`,
+print length only (`<N chars>`), never the value, regardless of expected
+provider behavior. Cloudflare's CREATE responses return secrets in
+plaintext; UPDATE responses redact. Don't assume.
+
+---
+
 ## Session 14: v1.9.1 — GCP project migration to dedicated `growme-cro` — May 20, 2026
 
 **Goal**: Finish the post-incident consumer-isolation work. After the

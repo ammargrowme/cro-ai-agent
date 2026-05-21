@@ -3,7 +3,7 @@ type: project
 title: "CRO AI Agent"
 stack: "React/Vite/Gemini"
 status: stable
-version: "v1.9.1"
+version: "v1.9.2"
 asana_gid: "1214758226073235"
 asana_canonical_comment_gid: "1214758294364623"
 asana_url: "https://app.asana.com/1/93326763080426/project/979744792423226/task/1214758226073235"
@@ -13,6 +13,9 @@ asana_predecessors:
   - "1213900425643638"  # CRO AI Agent (closed 2026-04-24)
 gcp_project: "growme-cro (#869955258560)"
 gemini_key_resource: "projects/869955258560/locations/global/keys/4542a38d-e166-47ff-8fc5-c39e1e9ab536"
+cf_access_app_id: "fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83"
+cf_access_idp_id: "1b2d95fe-ac3a-405f-b9c4-7a5dd74b4a91"  # Google (CRO AI Agent), dedicated since v1.9.2
+cf_access_account_id: "d47686239be0b47a3cbf227c7a86d250"
 updated: 2026-05-20
 ---
 
@@ -22,7 +25,7 @@ updated: 2026-05-20
 
 ## Quick Status
 
-- **Version**: 1.9.1 (May 20, 2026)
+- **Version**: 1.9.2 (May 20, 2026)
 - **Live URL**: https://cro.growmeapps.io (use this — `cro-ai-agent.vercel.app` is a known-dead alias)
 - **Repo**: https://github.com/ammargrowme/cro-ai-agent
 - **Deployment**: Auto-deploys to Vercel on every push to `main`
@@ -30,7 +33,7 @@ updated: 2026-05-20
 - **All 6 API endpoints**: analyze, chat, generateCode, generateABTests, learnings, discover
 
 ### 🚪 Access gate (since v1.9.0)
-- Site is gated by **Cloudflare Access** — every request to `cro.growmeapps.io` (incl. `/api/*`) requires a signed-in `@growme.ca` Google identity. App `fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83`, policy `bbae3fad-…`.
+- Site is gated by **Cloudflare Access** — every request to `cro.growmeapps.io` (incl. `/api/*`) requires a signed-in `@growme.ca` Google identity. App `fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83`, policy `bbae3fad-…`, IdP `1b2d95fe-ac3a-405f-b9c4-7a5dd74b4a91` *Google (CRO AI Agent)* — CRO-dedicated since v1.9.2. Backed by OAuth client `869955258560-psdddm7…apps.googleusercontent.com` in GCP project `growme-cro`, consent screen Internal (so Google IdP rejects wrong-domain at the OAuth layer before CF policy ever evaluates).
 - Access only enforces on the **proxied** DNS record (orange-cloud). If you ever grey-cloud `cro.growmeapps.io` for debugging, the gate stops enforcing — keep it orange.
 - Sign out → `/cdn-cgi/access/logout` (anchor in the header next to GROWAGENT). Cloudflare-served on the gated host, clears `CF_Authorization`. No serverless code.
 - Denied-user message (1.9.0a): `custom_deny_message="GrowME team only Sign in with your GrowME work email account"` was set on the app **but is unreachable in practice** — Google OAuth's Internal-consent already rejects wrong-domain accounts at the IdP layer (`Error 403: org_internal`) before Cloudflare's policy ever evaluates. Field is harmless dead config kept as a backstop if the consent screen is ever flipped from Internal→External. Next session may revert with a single PUT. **Cloudflare validation rules** — `custom_deny_message` rejects `,.!:@?-` and is capped at **75 chars**; a failing PUT is atomic (existing fields untouched on 400).
@@ -52,6 +55,16 @@ GROWAGENT is an AI-powered Conversion Rate Optimization (CRO) audit tool built f
 **Key differentiator**: The app has a **learning system** — it remembers past audits and chat feedback in localStorage, and feeds that knowledge into future AI prompts so recommendations get smarter over time.
 
 ## Session History
+
+### v1.9.2 (May 20, 2026) — Cloudflare Access OAuth decoupling: dedicated CRO IdP
+- Finishes the OAuth-side of the consumer-isolation work. Before today, CRO's Cloudflare Access gate borrowed the **Dev Hub's** Google IdP (`e74686ab-…`, backed by OAuth client in GCP `growme-dev-hub`). That was incidental, not by design — should never have shared. Today CRO got its own dedicated IdP and OAuth client in its own project.
+- **New OAuth client** in `growme-cro` GCP project: `869955258560-psdddm7svdplsd5u5adknu24psnidq8j.apps.googleusercontent.com`, consent screen User Type = Internal (Workspace-only), authorized redirect URI = `https://growme.cloudflareaccess.com/cdn-cgi/access/callback`.
+- **New Cloudflare Access IdP**: `1b2d95fe-ac3a-405f-b9c4-7a5dd74b4a91` *Google (CRO AI Agent)*, type=google, created via `POST /accounts/d47686239be0b47a3cbf227c7a86d250/access/identity_providers`.
+- **CRO Access app swap**: `PUT /access/apps/fedd9c2b-…` with `allowed_idps=[1b2d95fe-…]` (previously `[e74686ab-…]`). Every other field preserved bit-for-bit from snapshot (name, domain, session_duration 168h, auto_redirect_to_identity False, http_only_cookie_attribute True, custom_deny_message, policy bbae3fad-… `include:[{email_domain:{domain:"growme.ca"}}]`).
+- **Dev Hub IdP `e74686ab-…` untouched** — Dev Hub app `11f33d8c-…` continues to use it. Re-verified via GET.
+- **Incident**: during initial IdP POST, Cloudflare's response echoed the OAuth `client_secret` verbatim (unlike most providers — does NOT redact on create). I printed it via length-only-assumption code path, leaking it into the conversation transcript. Mitigation: Ammar rotated the secret in GCP Console; PUT-updated the IdP config with the new secret using strict length-only logging. Lesson saved to memory.
+- **Cleanup**: both OAuth `client_secret_*.json` files shred-deleted from project root (CF holds the secret; re-download from GCP if ever needed). `.gitignore` already covers the pattern (commit `7aa4371`).
+- **No code change**. Docs + Asana canonical updated. Browser test pending Ammar.
 
 ### v1.9.1 (May 20, 2026) — GCP project migration: `growme-internal-ai` → dedicated `growme-cro`
 - Finishes the post-incident decoupling that started 2026-05-19. After the shared `growme-217600` hub was suspended, CRO's key was temporarily parked on `growme-internal-ai` alongside Workload Dashboard. Today Workload split off to its own `growme-workload` project, and CRO splits off to its own `growme-cro`. **Each consumer now owns exactly one GCP project.**
@@ -296,9 +309,9 @@ After making ANY code change, you MUST update the following files before committ
 | Field | Value |
 |-------|-------|
 | **Last session date** | 2026-05-20 |
-| **What was done** | **v1.9.1: CRO Gemini key migrated off shared `growme-internal-ai` onto its own dedicated `growme-cro` GCP project (#869955258560)** — finishes the post-incident decoupling. New project is hardened with CA$15/mo budget + alerts and locked to `generativelanguage.googleapis.com` only. Vercel `GEMINI_API_KEY` swapped on Production, prod redeploy bound the new value, old key `6933c74b-…` on `growme-internal-ai` deleted. No code change. CLAUDE.md / CHANGELOG / IMPLEMENTATION_RECAP / Asana canonical updated. |
-| **Next step** | (1) **Cloudflare Access OAuth decoupling** — CRO's gate currently shares the Dev Hub's Google OAuth client (IdP `e74686ab-…` *Google (GrowME Workspace)*); awaiting Ammar's CRO-specific OAuth client JSON to swap CRO onto its own IdP and detach from Dev Hub. (2) Refresh local `.env.development.local` with the new growme-cro key (gitignored, local-dev only — production fine). (3) Optional cleanup: revert `custom_deny_message` on app `fedd9c2b-…` (one PUT; harmless dead config). (4) Parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
-| **Blockers** | None for production (gate live + enforcing, sign-out works, all v1.8.x leak/abuse vectors closed, Gemini path on new growme-cro key verified live, `growme-internal-ai` project deleted entirely). Cloudflare Access OAuth decoupling pending new OAuth client JSON from Ammar. Local-dev `.env.development.local` still holds the dead `growme-internal-ai` key (project gone, so the key 403s) — refresh with `growme-cro` key before `vercel dev`. Unlimited-mode awaiting Abas. |
+| **What was done** | **v1.9.1**: CRO Gemini key migrated off shared `growme-internal-ai` onto its own dedicated `growme-cro` GCP project (#869955258560); old project deleted entirely after both consumers migrated off. **v1.9.2: Cloudflare Access OAuth decoupling complete** — created dedicated OAuth client `869955258560-psdddm7…` in `growme-cro` (consent Internal, redirect `https://growme.cloudflareaccess.com/cdn-cgi/access/callback`), created new CF IdP `1b2d95fe-…` *Google (CRO AI Agent)*, PUT-swapped CRO Access app `fedd9c2b-…` to use it. Dev Hub IdP `e74686ab-…` and Dev Hub app `11f33d8c-…` untouched. Each consumer now owns its own OAuth client AND its own GCP project. No code change. |
+| **Next step** | (1) **Browser sign-in test by Ammar**: open `cro.growmeapps.io` in fresh incognito → click *Sign in with Google* → confirm the OAuth screen shows the CRO client (`869955258560-…`) not the Dev Hub client, and login completes. If it fails with `redirect_uri_mismatch`, the GCP redirect URI may not have saved — re-add it. (2) Refresh local `.env.development.local` with the new `growme-cro` Gemini key (gitignored, local-dev only — production fine). (3) Optional cleanup: revert `custom_deny_message` on app `fedd9c2b-…` (one PUT; harmless dead config). (4) Parked: "unlimited / deep audit mode" — awaiting Abas's Slack decision (channel D09PFS0M3AR, parent ts `1777334772.765899`). |
+| **Blockers** | None for production. Gate live + enforcing on the NEW CRO IdP (verified GET app + unauth curl → 302). All v1.8.x leak/abuse vectors closed. Gemini path on new `growme-cro` key verified. `growme-internal-ai` project deleted. **Verification dependency**: live sign-in flow via the new OAuth client needs Ammar's clean-incognito test — only that confirms the GCP-side redirect URI was actually saved (the downloaded JSON didn't include it but client_id/secret are still valid, so the IdP creation succeeded). Unlimited-mode awaiting Abas. |
 
 ---
 
