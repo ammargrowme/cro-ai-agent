@@ -31,3 +31,11 @@ GrowAgent_*.md
 # Contains Zoom recording passcodes; the distilled CXL_PRINCIPLES
 # constant in api/_knowledge.js is the public-facing version.
 CRO Training*.docx
+
+# OAuth 2.0 client_secret JSON files downloaded from Google Cloud Console.
+# Filenames look like client_secret_<projectnumber>-<hash>.apps.googleusercontent.com.json
+# These hold the OAuth client_secret in plaintext — NEVER commit.
+# Used out-of-band to configure Cloudflare Access IdPs; delete after use
+# or move to ~/Code/_shared/oauth-clients/ (also gitignored).
+client_secret*.json
+client_secret*.googleusercontent.com.json
