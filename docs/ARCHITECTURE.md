@@ -69,3 +69,15 @@ Each category is scored 0-100 by the AI, and the top 5 critical failures are fla
 - **Categories** — CTA, Trust, UX, Design, Performance, Copy, Mobile, SEO, Forms (expanded from 4 in v1.1.0)
 - **Gemini model** — `gemini-3-flash-preview` for analysis + chat (frontier-class quality), `gemini-2.5-flash` for code gen + A/B tests (speed-optimized)
 - **Temperature** — 0.2 for analysis calls, 0.3 for chat
+
+## v1.8.0 feature notes (moved from AGENTS.md 2026-10-14)
+
+<!-- Moved verbatim from the AGENTS.md Architecture section on 2026-10-14 (byte cap). -->
+
+**CXL knowledge base** (v1.8.0+): `api/_knowledge.js` distills CXL Institute training (persuasive design, visual hierarchy, web forms, CTAs, awareness levels, friction taxonomy, Relevance/Trust/Stimulance, fast/slow thinking, copywriting) into a `CXL_PRINCIPLES` constant. Injected into every Gemini prompt alongside the checklist.
+
+**Auto-discovery** (v1.8.0+): `/api/discover` endpoint takes a single URL and returns up to 25 same-origin pages via sitemap.xml → robots.txt → homepage crawl with depth-1 BFS through priority paths. Helpers in `api/_extract.js`.
+
+**Static health audit** (v1.8.0+): `api/_extract.js` extracts links, buttons, forms from raw HTML (preserved alongside sanitized HTML in the scrape phase). HEAD-checks URLs at concurrency 10 with GET-with-Range fallback for 405/403. Surfaces broken links, CTA→outcome mismatches, generic CTA copy, inline-label form anti-patterns.
+
+**Form friction call** (v1.8.0+): 6th Gemini call applies CXL form-friction rules to each extracted form, returning friction score + concrete fixes per form.

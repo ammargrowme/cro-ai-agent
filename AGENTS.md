@@ -17,7 +17,7 @@ gemini_key_resource: "projects/869955258560/locations/global/keys/4542a38d-e166-
 cf_access_app_id: "fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83"
 cf_access_idp_id: "1b2d95fe-ac3a-405f-b9c4-7a5dd74b4a91"  # Google (CRO AI Agent), dedicated since v1.9.2
 cf_access_account_id: "d47686239be0b47a3cbf227c7a86d250"
-updated: 2026-05-20
+updated: 2026-10-14
 ---
 
 # AGENTS.md — GROWAGENT CRO AI Agent
@@ -37,7 +37,6 @@ updated: 2026-05-20
 - Site is gated by **Cloudflare Access** — every request to `cro.growmeapps.io` (incl. `/api/*`) requires a signed-in `@growme.ca` Google identity. App `fedd9c2b-9fcb-4977-8fc1-bab4a78f7a83`, policy `bbae3fad-…`, IdP `1b2d95fe-ac3a-405f-b9c4-7a5dd74b4a91` *Google (CRO AI Agent)* — CRO-dedicated since v1.9.2. Backed by OAuth client `869955258560-psdddm7…apps.googleusercontent.com` in GCP project `growme-cro`, consent screen Internal (so Google IdP rejects wrong-domain at the OAuth layer before CF policy ever evaluates).
 - Access only enforces on the **proxied** DNS record (orange-cloud). If you ever grey-cloud `cro.growmeapps.io` for debugging, the gate stops enforcing — keep it orange.
 - Sign out → `/cdn-cgi/access/logout` (anchor in the header next to GROWAGENT). Cloudflare-served on the gated host, clears `CF_Authorization`. No serverless code.
-- Denied-user message (1.9.0a): `custom_deny_message="GrowME team only Sign in with your GrowME work email account"` was set on the app **but is unreachable in practice** — Google OAuth's Internal-consent already rejects wrong-domain accounts at the IdP layer (`Error 403: org_internal`) before Cloudflare's policy ever evaluates. Field is harmless dead config kept as a backstop if the consent screen is ever flipped from Internal→External. Next session may revert with a single PUT. **Cloudflare validation rules** — `custom_deny_message` rejects `,.!:@?-` and is capped at **75 chars**; a failing PUT is atomic (existing fields untouched on 400).
 - **Gotcha: Cloudflare's `/cdn-cgi/access/authorized` page rendering "Invalid login session" is replay protection on a one-shot nonce/state callback URL**, NOT a policy denial. Stale browser tabs / refreshed callback URLs / consumed nonces trigger it. The CF_Authorization cookie from the prior successful auth remains valid — that's why the "URL of your application" link drops the user straight into the app. Before diagnosing as a configuration bug, ask the user to clean-flow retest in fresh incognito starting from the app root.
 - **Rollback if Google breaks**: PUT app `allowed_idps:[]` → built-in OTP IdP returns instantly.
 
@@ -67,13 +66,7 @@ React 18 + Vite 5 frontend (single `App.jsx` ~1800 lines) with Tailwind CSS styl
 
 **CRO Checklist**: 10 categories, 50+ criteria from the GrowMe Basic Website Standards. Embedded in `api/analyze.js`. Each category scored 0-100 by AI. This is the ONLY checklist in use (confirmed v1.8.0).
 
-**CXL knowledge base** (v1.8.0+): `api/_knowledge.js` distills CXL Institute training (persuasive design, visual hierarchy, web forms, CTAs, awareness levels, friction taxonomy, Relevance/Trust/Stimulance, fast/slow thinking, copywriting) into a `CXL_PRINCIPLES` constant. Injected into every Gemini prompt alongside the checklist.
-
-**Auto-discovery** (v1.8.0+): `/api/discover` endpoint takes a single URL and returns up to 25 same-origin pages via sitemap.xml → robots.txt → homepage crawl with depth-1 BFS through priority paths. Helpers in `api/_extract.js`.
-
-**Static health audit** (v1.8.0+): `api/_extract.js` extracts links, buttons, forms from raw HTML (preserved alongside sanitized HTML in the scrape phase). HEAD-checks URLs at concurrency 10 with GET-with-Range fallback for 405/403. Surfaces broken links, CTA→outcome mismatches, generic CTA copy, inline-label form anti-patterns.
-
-**Form friction call** (v1.8.0+): 6th Gemini call applies CXL form-friction rules to each extracted form, returning friction score + concrete fixes per form.
+**v1.8.0 additions** (CXL knowledge base in `api/_knowledge.js`, `/api/discover` auto-discovery, static health audit in `api/_extract.js`, the 6th form-friction Gemini call): the four paragraphs moved to [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (section "v1.8.0 feature notes (moved from AGENTS.md 2026-10-14)").
 
 **Gemini models**: `gemini-3-flash-preview` for analysis + chat, `gemini-2.5-flash` for code gen + A/B tests. Temperature 0.2/0.3.
 
@@ -83,13 +76,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details including lear
 
 ## Schemas
 
-**Report** (`api/analyze.js` output): `overall_score`, `summary`, `strengths[]`, `quick_wins[]`, `recommendations[]` (id, priority, category, issue, recommendation, expected_impact, implementation, checklist_ref), `competitor_analysis`, `checklist_scores` (10 keys, 0-100), `checklist_flags[]`, `page_scores[]`, **`link_health`** `{ total_links, total_checked, broken_links[], by_page[] }`, **`cta_audit`** `{ total_ctas, issues[] }`, **`form_health`** `{ total_forms, per_form[] }`, **`pages_audited[]`**, `audit_metadata` (now includes `pages_requested`, `pages_scraped`, `urls_health_checked`).
-
-**Discover** (`api/discover.js` output): `{ pages: [...], source: "sitemap"|"crawl"|"mixed", total_found, origin }`.
-
-**Chat** (`api/chat.js` output): `message` (string), `updated_report` (full report or null), `learning_insight` (string or null).
-
-See [docs/SCHEMAS.md](docs/SCHEMAS.md) for full JSON examples and field reference tables.
+Report / Discover / Chat output shapes: the one-paragraph summary moved to [docs/SCHEMAS.md](docs/SCHEMAS.md) (section "Summary (moved from AGENTS.md 2026-10-14)") next to the full JSON examples and field tables.
 
 ## How to Run
 
@@ -111,29 +98,7 @@ See [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) for resolved issues history and
 
 ## File Map
 
-```
-├── api/
-│   ├── _utils.js       # validateUrl (SSRF) + rateLimit
-│   ├── _knowledge.js   # CXL_PRINCIPLES (v1.8.0)
-│   ├── _extract.js     # link/button/form/sitemap/HEAD-check helpers (v1.8.0)
-│   ├── analyze.js      # main audit pipeline (Phase 1 → 1.5 → 2 → 3)
-│   ├── chat.js         # follow-up chat
-│   ├── discover.js     # sitemap + homepage crawl (v1.8.0)
-│   ├── generateCode.js # per-rec code patches
-│   ├── generateABTests.js
-│   └── learnings.js    # Redis-backed learning system
-├── src/
-│   ├── constants/  # BRAND, CHECKLIST_LABELS, loading data
-│   ├── utils/      # clipboard, json, learning, localStorage
-│   ├── utils/export/  # docx, jpeg, txt, xlsx exporters
-│   ├── App.jsx     # Main frontend (~2400 lines after v1.8.0)
-│   └── main.jsx    # React entry point
-├── docs/         # Reference documentation (architecture, schemas, etc.)
-├── public/       # Static assets
-└── [root files]  # AGENTS.md, TODO.md, CHANGELOG.md, README.md, DEVELOPER.md, etc.
-```
-
-See [docs/FILE-MAP.md](docs/FILE-MAP.md) for complete directory listing with file descriptions.
+The annotated tree moved to [docs/FILE-MAP.md](docs/FILE-MAP.md) (section "Short tree (moved from AGENTS.md 2026-10-14)"), which also has the complete directory listing with file descriptions. Entry points: `api/*.js` (serverless, `_utils.js` holds validateUrl + rateLimit), `src/App.jsx` (main UI).
 
 ## Reference docs
 

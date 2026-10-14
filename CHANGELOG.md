@@ -2,6 +2,14 @@
 
 All notable changes to the GROWAGENT project will be documented in this file.
 
+## [docs] - 2026-10-14 — AGENTS.md trimmed under the 15 KB cap (no code change)
+
+`_shared/scripts/validate-map.mjs` flagged AGENTS.md at 18 KB. Moved verbatim, nothing dropped:
+the Schemas summary to `docs/SCHEMAS.md`, the short File Map tree to `docs/FILE-MAP.md`, the four
+v1.8.0 feature paragraphs of the Architecture section to `docs/ARCHITECTURE.md`, and the 1.9.0a
+`custom_deny_message` note from the Access gate section to `docs/HISTORY.md`. AGENTS.md keeps the
+rules, the invariants, the Resume Point and a pointer to each. 17,969 bytes to 14,914.
+
 ## [1.9.2] - 2026-05-20 — Cloudflare Access OAuth decoupling: dedicated CRO IdP
 
 Finishes the OAuth-side of the consumer-isolation work. Before today, CRO's

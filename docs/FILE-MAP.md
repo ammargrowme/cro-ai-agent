@@ -47,3 +47,31 @@ CRO AI Agent/
 ├── .env.example            # Env template
 └── package.json            # Dependencies (React 18, Vite 5, Tailwind, Lucide, xlsx, docx)
 ```
+
+<!-- Short tree (moved from AGENTS.md 2026-10-14, byte cap). -->
+
+## File Map
+
+```
+├── api/
+│   ├── _utils.js       # validateUrl (SSRF) + rateLimit
+│   ├── _knowledge.js   # CXL_PRINCIPLES (v1.8.0)
+│   ├── _extract.js     # link/button/form/sitemap/HEAD-check helpers (v1.8.0)
+│   ├── analyze.js      # main audit pipeline (Phase 1 → 1.5 → 2 → 3)
+│   ├── chat.js         # follow-up chat
+│   ├── discover.js     # sitemap + homepage crawl (v1.8.0)
+│   ├── generateCode.js # per-rec code patches
+│   ├── generateABTests.js
+│   └── learnings.js    # Redis-backed learning system
+├── src/
+│   ├── constants/  # BRAND, CHECKLIST_LABELS, loading data
+│   ├── utils/      # clipboard, json, learning, localStorage
+│   ├── utils/export/  # docx, jpeg, txt, xlsx exporters
+│   ├── App.jsx     # Main frontend (~2400 lines after v1.8.0)
+│   └── main.jsx    # React entry point
+├── docs/         # Reference documentation (architecture, schemas, etc.)
+├── public/       # Static assets
+└── [root files]  # AGENTS.md, TODO.md, CHANGELOG.md, README.md, DEVELOPER.md, etc.
+```
+
+See [docs/FILE-MAP.md](docs/FILE-MAP.md) for complete directory listing with file descriptions.

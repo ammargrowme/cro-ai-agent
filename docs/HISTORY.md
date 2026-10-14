@@ -147,3 +147,7 @@ After making ANY code change, you MUST update the following files before committ
 - **Major** (x.0.0): Breaking changes (new auth system, database migration)
 
 **The goal**: Any AI or human picking up this repo at any point in time can read these files and know EXACTLY what the project state is, what was done, what works, what's broken, and what to do next — without needing any conversation history.
+
+<!-- Moved verbatim from AGENTS.md (Access gate section) on 2026-10-14, byte cap: a per-version note about the 1.9.0a custom_deny_message. -->
+
+- Denied-user message (1.9.0a): `custom_deny_message="GrowME team only Sign in with your GrowME work email account"` was set on the app **but is unreachable in practice** — Google OAuth's Internal-consent already rejects wrong-domain accounts at the IdP layer (`Error 403: org_internal`) before Cloudflare's policy ever evaluates. Field is harmless dead config kept as a backstop if the consent screen is ever flipped from Internal→External. Next session may revert with a single PUT. **Cloudflare validation rules** — `custom_deny_message` rejects `,.!:@?-` and is capped at **75 chars**; a failing PUT is atomic (existing fields untouched on 400).

@@ -83,3 +83,15 @@ Returned by `api/chat.js`:
 | `message` | string | The AI's conversational response text |
 | `updated_report` | object or null | Full report object if changes were made, `null` otherwise |
 | `learning_insight` | string or null | Reusable CRO insight if conversation reveals one, `null` otherwise |
+
+<!-- Summary (moved from AGENTS.md 2026-10-14, byte cap). -->
+
+## Schemas
+
+**Report** (`api/analyze.js` output): `overall_score`, `summary`, `strengths[]`, `quick_wins[]`, `recommendations[]` (id, priority, category, issue, recommendation, expected_impact, implementation, checklist_ref), `competitor_analysis`, `checklist_scores` (10 keys, 0-100), `checklist_flags[]`, `page_scores[]`, **`link_health`** `{ total_links, total_checked, broken_links[], by_page[] }`, **`cta_audit`** `{ total_ctas, issues[] }`, **`form_health`** `{ total_forms, per_form[] }`, **`pages_audited[]`**, `audit_metadata` (now includes `pages_requested`, `pages_scraped`, `urls_health_checked`).
+
+**Discover** (`api/discover.js` output): `{ pages: [...], source: "sitemap"|"crawl"|"mixed", total_found, origin }`.
+
+**Chat** (`api/chat.js` output): `message` (string), `updated_report` (full report or null), `learning_insight` (string or null).
+
+See [docs/SCHEMAS.md](docs/SCHEMAS.md) for full JSON examples and field reference tables.
